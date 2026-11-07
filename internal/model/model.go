@@ -129,6 +129,27 @@ type Connection struct {
 	RulePayload string   `json:"rulePayload"`
 }
 
+// Traffic is the latest aggregate byte rate from the running core.
+type Traffic struct {
+	Available bool  `json:"available"`
+	Up        int64 `json:"up"`
+	Down      int64 `json:"down"`
+}
+
+const TrafficHistoryWindow = 5 * time.Minute
+
+type TrafficPoint struct {
+	At          time.Time `json:"at"`
+	Up          int64     `json:"up"`
+	Down        int64     `json:"down"`
+	BreakBefore bool      `json:"breakBefore,omitempty"`
+}
+
+type TrafficSnapshot struct {
+	Traffic
+	History []TrafficPoint `json:"history,omitempty"`
+}
+
 type Connections struct {
 	Connections   []Connection `json:"connections"`
 	UploadTotal   int64        `json:"uploadTotal"`

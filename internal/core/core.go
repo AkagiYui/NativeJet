@@ -62,6 +62,8 @@ type Supervisor struct {
 	cancel     context.CancelFunc
 	controller Controller
 	done       chan struct{}
+	traffic    model.Traffic
+	trafficLog trafficHistory
 	Logs       Ring
 }
 
@@ -90,6 +92,7 @@ func (s *Supervisor) Restore(r *model.ProcessRecord, controller Controller) bool
 	copy := *r
 	s.record = &copy
 	s.controller = controller
+	s.traffic = model.Traffic{}
 	s.mu.Unlock()
 	if !s.Running() {
 		s.mu.Lock()
@@ -103,6 +106,7 @@ func (s *Supervisor) Restore(r *model.ProcessRecord, controller Controller) bool
 	s.mu.Unlock()
 	if controller.address != "" && !r.ControllerOccupied {
 		go s.followLogs(ctx, controller, r.PID)
+		go s.followTraffic(ctx, controller, &copy)
 	}
 	s.Logs.Add("info", "helper", "已恢复对现有内核进程的管理")
 	return true
@@ -139,11 +143,15 @@ func (s *Supervisor) Start(ctx context.Context, binary, home, config, revision s
 	life, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	s.mu.Lock()
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.record = r
 	s.controller = controller
 	s.cmd = cmd
 	s.cancel = cancel
 	s.done = done
+	s.traffic = model.Traffic{}
 	s.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
@@ -152,9 +160,10 @@ func (s *Supervisor) Start(ctx context.Context, binary, home, config, revision s
 		defer close(done)
 		cancel()
 		s.mu.Lock()
-		if s.record != nil && s.record.PID == r.PID {
+		if s.record == r {
 			s.record = nil
 			s.cmd = nil
+			s.traffic = model.Traffic{}
 		}
 		s.mu.Unlock()
 		if err != nil {
@@ -165,6 +174,7 @@ func (s *Supervisor) Start(ctx context.Context, binary, home, config, revision s
 	}()
 	if controller.address != "" && !occupied {
 		go s.followLogs(life, controller, r.PID)
+		go s.followTraffic(life, controller, r)
 	}
 	// Capture an immediate process exit and its stderr during startup.
 	grace := time.NewTimer(time.Second)
@@ -184,12 +194,12 @@ func (s *Supervisor) Stop() error {
 		return nil
 	}
 	s.mu.Lock()
-	cancel := s.cancel
 	done := s.done
-	s.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if s.cancel != nil {
+		s.cancel()
 	}
+	s.traffic = model.Traffic{}
+	s.mu.Unlock()
 	path, stamp, err := platform.ProcessIdentity(r.PID)
 	if err != nil {
 		s.mu.Lock()

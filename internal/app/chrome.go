@@ -92,6 +92,7 @@ func (a *App) sidebar(c *ui.Context) {
 			}
 		})
 		a.kernelStatus(c)
+		a.trafficPanel(c)
 	})
 }
 

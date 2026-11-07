@@ -227,6 +227,7 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		Interval int           `json:"interval"`
 		AssetID  int64         `json:"assetId"`
 		After    uint64        `json:"after"`
+		History  bool          `json:"history"`
 		Profile  model.Profile `json:"profile"`
 		Content  *string       `json:"content"`
 		Global   *string       `json:"global"`
@@ -306,6 +307,8 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		return nil, m.Start(ctx)
 	case "core.stop":
 		return nil, m.Stop()
+	case "traffic.snapshot":
+		return m.core.Traffic(args.History), nil
 	case "logs":
 		return m.Logs(args.After), nil
 	case "connections":

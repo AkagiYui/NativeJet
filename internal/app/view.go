@@ -566,6 +566,7 @@ func (a *App) settingsView(c *ui.Context) {
 						}
 					}
 				})
+			a.menuBarSettings(c)
 		})
 	})
 }

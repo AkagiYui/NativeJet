@@ -29,7 +29,6 @@ func (a *App) Start() {
 		ID:             "dev.nativejet.app.menu-bar",
 		Icon:           menuBarOutlineIcon,
 		IconIsTemplate: true,
-		ToolTip:        "NativeJet",
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "打开 NativeJet", Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
 			a.trayCoreItem,
@@ -41,6 +40,7 @@ func (a *App) Start() {
 		log.Printf("Could not create the NativeJet menu bar item: %v", err)
 	}
 	a.tray = tray
+	a.updateTray()
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
 	mygo.App.OnActivate(func(hasVisibleWindows bool) {
 		if !hasVisibleWindows {
@@ -72,6 +72,7 @@ func (a *App) Start() {
 	a.message = "正在连接后台服务…"
 	a.connect(ctx)
 	go a.poll(ctx)
+	go a.pollTraffic(ctx)
 }
 
 func (a *App) toggleCore() {
@@ -98,18 +99,18 @@ func (a *App) updateTray() {
 		a.trayCoreItem.SetEnabled(enabled)
 	}
 	running := a.coreRunning()
-	if a.trayRunning == running {
-		return
+	if running != a.trayDisplay.running {
+		label := "启用内核"
+		if running {
+			label = "停用内核"
+		}
+		a.trayCoreItem.SetLabel(label)
 	}
-	icon, label := menuBarOutlineIcon, "启用内核"
-	if running {
-		icon, label = menuBarIcon, "停用内核"
-	}
-	if err := a.tray.SetIcon(icon, true); err != nil {
-		log.Printf("Could not update the NativeJet menu bar icon: %v", err)
-	}
-	a.trayCoreItem.SetLabel(label)
-	a.trayRunning = running
+	a.updateMenuBarDisplay(menuBarDisplay{
+		running: running,
+		stacked: a.menuBarSpeedLayout == menuBarSpeedStacked,
+		labels:  a.trafficLabels(),
+	})
 }
 
 func (a *App) showWindow() {

@@ -29,7 +29,12 @@ type App struct {
 	win                                     *mygo.Window
 	tray                                    *mygo.Tray
 	trayCoreItem                            *mygo.MenuItem
-	trayRunning                             bool
+	trayDisplay                             menuBarDisplay
+	menuBarSpeedLayout                      menuBarSpeedLayout
+	menuBarSettingsError                    string
+	traffic                                 model.Traffic
+	trafficHistory                          []model.TrafficPoint
+	trafficClient                           *ipc.Client
 	quitting                                bool
 	importing                               *importForm
 	pendingImports                          []subscriptionLink
@@ -106,6 +111,7 @@ func New(o Options) (*App, error) {
 		o.Helper = filepath.Join(filepath.Dir(filepath.Dir(exe)), "Library/LaunchServices/nativejet-helper")
 	}
 	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
+	a.loadAppearance()
 	a.developmentClient = a.client
 	if o.PreferInstalled {
 		a.page = settingsPage
@@ -203,6 +209,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.problem = snap.Status.Error
 	}
 	if snap.Status.PID != a.snapshot.Status.PID {
+		a.traffic = model.Traffic{}
 		a.connections = model.Connections{}
 		a.groups = nil
 		a.connectionsError, a.proxiesError = nil, nil
