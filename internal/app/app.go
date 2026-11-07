@@ -125,6 +125,8 @@ func New(o Options) (*App, error) {
 	a.logRows.Selected = &a.logSelection
 	a.logDetail = newEditor("日志完整内容", true)
 	a.logDetail.Buffer.SetLanguage(nil)
+	a.logDetail.LineNumbers = editor.LineNumbersOff
+	a.logDetail.NoActiveLine = true
 	a.source = newEditor("原始配置", false)
 	a.global = newEditor("全局覆盖", false)
 	a.override = newEditor("当前配置覆盖", false)

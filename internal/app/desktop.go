@@ -38,8 +38,8 @@ func (a *App) Start() {
 
 	a.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:                "NativeJet",
-		TitleBarStyle:        mygo.TitleBarHidden,
-		TrafficLightPosition: &mygo.Point{X: 14, Y: 12},
+		TitleBarStyle:        mygo.TitleBarHiddenInset,
+		TrafficLightPosition: &mygo.Point{X: 14, Y: 16},
 		Width:                1160,
 		Height:               800,
 		MinWidth:             920,

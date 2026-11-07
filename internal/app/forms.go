@@ -37,6 +37,7 @@ func (a *App) addConfig() {
 	f.win = mygo.NewWindow(mygo.WindowOptions{Title: "添加配置", Width: 720, Height: 650, MinWidth: 560, MinHeight: 520, Content: ui.View(f.view)})
 }
 func (f *importForm) view(c *ui.Context) {
+	useWorkspaceTheme(c)
 	ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
 		heading(c, "添加配置", "订阅原文只读；文件和粘贴内容保存为可编辑的本地配置。")
 		ui.Segmented(c, &f.tab, "订阅地址", "添加文件", "粘贴内容")
@@ -193,6 +194,7 @@ func (a *App) downloadDialog() {
 	loading := true
 	var window *mygo.Window
 	window = mygo.NewWindow(mygo.WindowOptions{Title: "下载内核", Width: 700, Height: 440, Content: ui.View(func(c *ui.Context) {
+		useWorkspaceTheme(c)
 		ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
 			heading(c, "下载 Mihomo", "来源：MetaCubeX/mihomo · GitHub Releases")
 			if loading {
