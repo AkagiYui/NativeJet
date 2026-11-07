@@ -486,8 +486,11 @@ func (a *App) logsView(c *ui.Context) {
 		})
 	}
 }
-func (a *App) serviceView(c *ui.Context) {
-	workspaceHeader(c, serviceIcon, "后台服务", func() {
+
+const settingsPage = "设置"
+
+func (a *App) settingsView(c *ui.Context) {
+	workspaceHeader(c, settingsIcon, settingsPage, func() {
 		if action(c, scanIcon, "刷新并重新连接", false).Disabled(a.busy).Clicked() {
 			a.refreshService()
 			if a.registration == nil {
@@ -498,7 +501,8 @@ func (a *App) serviceView(c *ui.Context) {
 	p := palette(c)
 	ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Padding(16, 20).ScrollbarInsets(0, 4, 0, 0).Children(func() {
 		ui.Column(c).FillWidth().Gap(16).Children(func() {
-			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Background(p.Surface).Children(func() {
+			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Background(p.Surface).
+				Role(ui.RoleGroup).Label("后台服务").Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Icon(c, serviceIcon).Size(17, 17).TextColor(p.TextMuted)
 					ui.Text(c, "NativeJet Helper").FontSize(15).FontWeight(600)
@@ -526,7 +530,8 @@ func (a *App) serviceView(c *ui.Context) {
 						stateLabel(c, "所选内核尚未获得管理员授权", p.Warning)
 					}
 				}
-				ui.Row(c).FillWidth().Children(func() {
+				muted(c, "关窗后，后台服务仍可管理内核。卸载会保留系统中的配置和历史，并复制回普通用户服务。")
+				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 					label := "安装并授权后台服务"
 					if a.registration != nil {
 						label = "更新并授权后台服务"
@@ -537,21 +542,30 @@ func (a *App) serviceView(c *ui.Context) {
 					if action(c, nil, label, true).Disabled(a.busy).Clicked() {
 						a.installService(false, a.snapshot.State.SelectedKernel, nil)
 					}
-				})
-				if a.helperError != "" {
-					ui.Text(c, a.helperError).TextColor(p.Danger).Selectable()
-				}
-			})
-			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Children(func() {
-				ui.Text(c, "服务维护").FontSize(14).FontWeight(600)
-				muted(c, "关窗后，后台服务仍可管理内核。卸载会保留系统中的配置和历史，并复制回普通用户服务。")
-				ui.Row(c).FillWidth().Children(func() {
 					if action(c, nil, "卸载后台服务，保留配置", false).
 						Disabled(a.busy || a.registration == nil || !a.connected || a.snapshot.Status.Running).Clicked() {
 						a.installService(true, "", nil)
 					}
 				})
+				if a.helperError != "" {
+					ui.Text(c, a.helperError).TextColor(p.Danger).Selectable()
+				}
 			})
+			ui.Row(c).FillWidth().Padding(16).Gap(16).AlignItems(ui.Center).Radius(8).Border(1, p.line).Background(p.Surface).
+				Children(func() {
+					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
+						ui.Text(c, "Clash 订阅链接").FontSize(15).FontWeight(600)
+						muted(c, "将网页上的 Clash 一键导入链接交给 NativeJet 打开。")
+					})
+					if action(c, nil, "将 NativeJet 设为 Clash 链接默认应用", false).Shrink(0).Disabled(a.busy).Clicked() {
+						if err := mygo.App.RegisterURLScheme("clash"); err != nil {
+							a.problem = "无法设置 Clash 链接的默认应用，请从打包的 NativeJet.app 重试"
+						} else {
+							a.problem = ""
+							a.message = "NativeJet 已设为 Clash 链接的默认应用"
+						}
+					}
+				})
 		})
 	})
 }

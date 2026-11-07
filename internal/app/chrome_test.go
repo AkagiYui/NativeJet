@@ -109,7 +109,7 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		}
 		for _, page := range []struct {
 			name, content string
-		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {proxiesPage, ""}, {"连接", "活动连接列表"}, {"日志", "日志列表"}, {"后台服务", ""}} {
+		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {proxiesPage, ""}, {"连接", "活动连接列表"}, {"日志", "日志列表"}, {settingsPage, ""}} {
 			a.page, a.tab, a.format = page.name, 2, 0
 			tester.Frame()
 			if got := bounds("应用状态栏"); got != bar {
@@ -120,6 +120,18 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 					t.Errorf("%s: content ends at %v, status bar starts at %v", page.name, r.Y+r.H, bar.Y)
 				}
 			}
+		}
+		card := bounds("后台服务")
+		install := bounds("安装并授权后台服务")
+		uninstall := bounds("卸载后台服务，保留配置")
+		if install.Y != uninstall.Y || install.X+install.W > uninstall.X ||
+			install.X < card.X || uninstall.X+uninstall.W > card.X+card.W ||
+			install.Y < card.Y || uninstall.Y+uninstall.H > card.Y+card.H {
+			t.Errorf("service buttons %v and %v are not side by side inside %v", install, uninstall, card)
+		}
+		clash := bounds("将 NativeJet 设为 Clash 链接默认应用")
+		if clash.Y < card.Y+card.H || clash.Y+clash.H > bar.Y {
+			t.Errorf("Clash action %v is not visible below the service card %v", clash, card)
 		}
 	}
 

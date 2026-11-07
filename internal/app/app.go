@@ -108,7 +108,7 @@ func New(o Options) (*App, error) {
 	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
 	a.developmentClient = a.client
 	if o.PreferInstalled {
-		a.page = "后台服务"
+		a.page = settingsPage
 		if registration, err := installation.LoadRegistration(); err == nil {
 			a.registration = &registration
 			a.client = installedClient(registration)
@@ -169,7 +169,7 @@ func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
 			a.problem = err.Error()
 			a.message = "后台服务尚未连接"
 			if a.registration != nil {
-				a.page = "后台服务"
+				a.page = settingsPage
 			}
 		} else {
 			a.accept(snap, false)

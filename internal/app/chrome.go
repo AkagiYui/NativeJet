@@ -23,6 +23,7 @@ var (
 	linkIcon     = outlineIcon(`<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-6 4v-4h12v4"/>`)
 	logIcon      = outlineIcon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>`)
 	serviceIcon  = outlineIcon(`<path d="M12 2.5 20 6v5c0 5-3 8-8 10.5C7 19 4 16 4 11V6zM8.5 12l2.5 2.5 4.5-5"/>`)
+	settingsIcon = outlineIcon(`<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4"/>`)
 	plusIcon     = outlineIcon(`<path d="M12 5v14M5 12h14"/>`)
 	downloadIcon = outlineIcon(`<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>`)
 	folderIcon   = outlineIcon(`<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`)
@@ -51,8 +52,8 @@ func (a *App) view(c *ui.Context) {
 					a.connectionsView(c)
 				case "日志":
 					a.logsView(c)
-				case "后台服务":
-					a.serviceView(c)
+				case settingsPage:
+					a.settingsView(c)
 				}
 			})
 		})
@@ -86,7 +87,7 @@ func (a *App) sidebar(c *ui.Context) {
 			a.navItem(c, logIcon, "日志")
 			ui.Box(c).Grow(1)
 			sectionLabel(c, "系统")
-			if a.navItem(c, serviceIcon, "后台服务") {
+			if a.navItem(c, settingsIcon, settingsPage) {
 				a.refreshService()
 			}
 		})

@@ -37,12 +37,12 @@ open build/NativeJet.app
 
 网站的一键导入链接可用 `clash://install-config?url=<编码后的 HTTPS 订阅地址>&name=<编码后的订阅名称>`。
 `name` 可省略。NativeJet 会预填订阅，点击“下载并添加订阅”才会下载。启用订阅时另行点击“应用配置”。
-如系统把链接交给其他 Clash 客户端，可从 NativeJet 菜单栏图标中手动选择“将 NativeJet 设为 Clash 链接默认应用”。
+如系统把链接交给其他 Clash 客户端，可在“设置”中手动点击“将 NativeJet 设为 Clash 链接默认应用”。
 
 图标的 SVG 源文件位于 `packaging/macos/artwork/`。修改后可用 `python3 scripts/render-icons.py`
 重新生成图标（需 `rsvg-convert`）；正常构建直接使用已生成的资源。
 
-未提供 Developer ID 时，构建产物采用 ad-hoc 签名。打开 App 的“后台服务”，
+未提供 Developer ID 时，构建产物采用 ad-hoc 签名。打开 App 的“设置”，
 点击“安装并授权后台服务”，在 macOS 原生弹窗中输入管理员密码即可。
 本地构建可使用 TUN，不需要手动启动终端、执行 sudo 或重新导入配置。
 未安装服务时，App 自动连接普通用户 helper；所有配置继续可编辑和保存。
@@ -61,7 +61,7 @@ build/NativeJet.app/Contents/MacOS/NativeJet \
 ## 在界面中安装、授权与测试 TUN
 
 1. 在“内核”选择自己放入或从官方来源下载的内核。
-2. 打开“后台服务”，点击“安装并授权后台服务”，完成系统管理员授权。
+2. 打开“设置”，点击“安装并授权后台服务”，完成系统管理员授权。
 3. 等待显示“已连接 · 可以启动 TUN”。现有配置、覆盖、内核副本、缓存和历史自动迁移；
    普通用户数据目录完整保留。迁移不会把尚未应用的修改替换成已应用版本。
 4. 在“配置 → 覆盖配置 → 全局覆盖”中将 `tun.enable` 设为 `true`，保存覆盖并点击“应用配置”，再启动内核。
