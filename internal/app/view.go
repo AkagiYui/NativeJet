@@ -489,6 +489,7 @@ func (a *App) settingsView(c *ui.Context) {
 	p := palette(c)
 	ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Padding(16, 20).ScrollbarInsets(0, 4, 0, 0).Children(func() {
 		ui.Column(c).FillWidth().Gap(16).Children(func() {
+			a.appearanceSettings(c)
 			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Background(p.Surface).
 				Role(ui.RoleGroup).Label("后台服务").Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
@@ -554,7 +555,6 @@ func (a *App) settingsView(c *ui.Context) {
 						}
 					}
 				})
-			a.menuBarSettings(c)
 		})
 	})
 }

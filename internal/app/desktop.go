@@ -17,6 +17,7 @@ var menuBarOutlineIcon []byte
 
 // Start creates the menu bar item and main window on MyGo's ready callback.
 func (a *App) Start() {
+	mygo.Theme.SetSource(a.appearance.Theme)
 	a.trayCoreItem = &mygo.MenuItem{
 		Label:    "启用内核",
 		Disabled: true,
@@ -108,7 +109,7 @@ func (a *App) updateTray() {
 	}
 	a.updateMenuBarDisplay(menuBarDisplay{
 		running: running,
-		stacked: a.menuBarSpeedLayout == menuBarSpeedStacked,
+		stacked: a.appearance.MenuBarSpeedLayout == menuBarSpeedStacked,
 		labels:  a.trafficLabels(),
 	})
 }

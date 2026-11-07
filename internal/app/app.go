@@ -30,8 +30,8 @@ type App struct {
 	tray                                    *mygo.Tray
 	trayCoreItem                            *mygo.MenuItem
 	trayDisplay                             menuBarDisplay
-	menuBarSpeedLayout                      menuBarSpeedLayout
-	menuBarSettingsError                    string
+	appearance                              appearancePreferences
+	appearanceError                         string
 	traffic                                 model.Traffic
 	trafficHistory                          []model.TrafficPoint
 	trafficClient                           *ipc.Client
