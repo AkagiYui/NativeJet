@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -215,6 +216,8 @@ func (a *App) finalView(c *ui.Context) {
 	}
 }
 
+var kernelVersionPattern = regexp.MustCompile(`(?i)^(?:mihomo(?: meta)?|clash\.meta)\s+((?:v?\d+\.\d+|alpha-)\S*)`)
+
 func (a *App) kernelView(c *ui.Context) {
 	workspaceHeader(c, kernelIcon, "内核", func() {
 		if action(c, folderIcon, "打开目录", false).Disabled(!a.connected).Clicked() {
@@ -247,14 +250,29 @@ func (a *App) kernelView(c *ui.Context) {
 
 	ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		kernels := a.snapshot.Kernels
-		columns := []ui.TableColumn{{Title: "文件 / 版本"}, {Title: "架构", Width: 75}, {Title: "状态", Width: 100}}
+		columns := []ui.TableColumn{
+			{Title: "文件名"},
+			{Title: "版本号", Width: 132},
+			{Title: "架构", Width: 75},
+			{Title: "状态", Width: 100},
+		}
 		workspaceTable(c, &a.kernelRows, columns, len(kernels), "识别到的内核", func(row, col int) {
 			k := kernels[row]
 			text := k.Name
 			switch col {
 			case 1:
-				text = k.Arch
+				text = k.Version
+				if match := kernelVersionPattern.FindStringSubmatch(k.Version); match != nil {
+					text = match[1]
+				}
+				if text == "" {
+					text = "—"
+				}
+				ui.Text(c, text).FontSize(12).SingleLine().Tooltip(k.Version)
+				return
 			case 2:
+				text = k.Arch
+			case 3:
 				text = "可用"
 				if k.Error != "" {
 					text = "无法使用"
