@@ -525,6 +525,7 @@ const settingsPage = "设置"
 func (a *App) settingsView(c *ui.Context) {
 	workspaceHeader(c, settingsIcon, settingsPage, func() {
 		if action(c, scanIcon, "刷新并重新连接", false).Disabled(a.busy).Clicked() {
+			a.refreshLoginItem()
 			a.refreshService()
 			if a.registration == nil {
 				a.connect(mygoContext())
@@ -535,6 +536,7 @@ func (a *App) settingsView(c *ui.Context) {
 	ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Padding(16, 20).ScrollbarInsets(0, 4, 0, 0).Children(func() {
 		ui.Column(c).FillWidth().Gap(16).Children(func() {
 			a.appearanceSettings(c)
+			a.startupSettings(c)
 			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Background(p.Surface).
 				Role(ui.RoleGroup).Label("后台服务").Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {

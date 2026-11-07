@@ -15,8 +15,21 @@ var menuBarIcon []byte
 //go:embed assets/MenuBarOutlineTemplate.png
 var menuBarOutlineIcon []byte
 
-// Start creates the menu bar item and main window on MyGo's ready callback.
-func (a *App) Start() {
+func (a *App) Run() error {
+	mygo.App.SetName("NativeJet")
+	if a.startup.HideWindow {
+		// Apply the policy before AppKit launches so it won't activate the app.
+		mygo.App.Dock.Hide()
+	}
+	mygo.App.WhenReady(a.start)
+	mygo.App.OnOpenURL(func(raw string) {
+		// macOS can deliver the link before the main window is created.
+		mygo.App.WhenReady(func() { a.OpenURL(raw) })
+	})
+	return mygo.App.Run()
+}
+
+func (a *App) start() {
 	mygo.Theme.SetSource(a.appearance.Theme)
 	a.trayCoreItem = &mygo.MenuItem{
 		Label:    "启用内核",
@@ -42,10 +55,21 @@ func (a *App) Start() {
 	}
 	a.tray = tray
 	a.updateTray()
+	hidden := a.startup.HideWindow && tray != nil
+	if a.startup.HideWindow && !hidden {
+		// Keep the app reachable if the menu bar item couldn't be created.
+		mygo.App.Dock.Show()
+	}
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
 	mygo.App.OnActivate(func(hasVisibleWindows bool) {
 		if !hasVisibleWindows {
 			a.showWindow()
+		}
+	})
+	mygo.App.OnDidBecomeActive(func() {
+		if a.page == settingsPage && a.win != nil && !a.quitting {
+			a.refreshLoginItem()
+			a.win.Invalidate()
 		}
 	})
 
@@ -57,9 +81,13 @@ func (a *App) Start() {
 		Height:               800,
 		MinWidth:             920,
 		MinHeight:            640,
+		Hidden:               hidden,
 		Page:                 mygo.PageOptions{BackgroundThrottling: mygo.ThrottlingOff},
 		Content:              ui.View(a.view),
 	})
+	if a.page == settingsPage {
+		a.refreshLoginItem()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.win.OnClosed(cancel)
 	a.win.OnClose(func(e *mygo.CloseEvent) {
@@ -71,6 +99,7 @@ func (a *App) Start() {
 		}
 	})
 	a.message = "正在连接后台服务…"
+	a.autoStartPending = a.startup.AutoStartCore
 	a.connect(ctx)
 	go a.poll(ctx)
 	go a.pollTraffic(ctx)

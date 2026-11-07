@@ -92,6 +92,7 @@ func (a *App) sidebar(c *ui.Context) {
 			ui.Box(c).Grow(1)
 			sectionLabel(c, "系统")
 			if a.navItem(c, settingsIcon, settingsPage) {
+				a.refreshLoginItem()
 				a.refreshService()
 			}
 		})

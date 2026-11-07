@@ -129,7 +129,12 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 			install.Y < card.Y || uninstall.Y+uninstall.H > card.Y+card.H {
 			t.Errorf("service buttons %v and %v are not side by side inside %v", install, uninstall, card)
 		}
-		clash := bounds("将 NativeJet 设为 Clash 链接默认应用")
+		const clashAction = "将 NativeJet 设为 Clash 链接默认应用"
+		if r, ok := tester.Find(clashAction); !ok || r.W <= 0 || r.H <= 0 {
+			tester.Scroll(card.X+card.W/2, card.Y+card.H/2, 0, 500)
+			card = bounds("后台服务")
+		}
+		clash := bounds(clashAction)
 		if clash.Y < card.Y+card.H || clash.Y+clash.H > bar.Y {
 			t.Errorf("Clash action %v is not visible below the service card %v", clash, card)
 		}

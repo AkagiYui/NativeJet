@@ -6,7 +6,7 @@ package platform
 #cgo LDFLAGS: -framework Foundation -framework Security -framework ServiceManagement
 #include <stdlib.h>
 int nj_peer(int fd, const char *requirement, unsigned int *uid, char **error);
-int nj_service(const char *action, char **error);
+int nj_login_item(const char *action, char **error);
 long long nj_process(int pid, char *path, int capacity);
 char *nj_requirement(const char *path, char **error);
 int nj_check_signature(const char *path, const char *requirement, int self, char **error);
@@ -40,13 +40,24 @@ func Peer(fd uintptr, requirement string) (int, error) {
 	}
 	return int(uid), nil
 }
-func Service(action string) (int, error) {
+
+type LoginItemStatus int
+
+const (
+	// These values mirror SMAppServiceStatus for registered apps.
+	LoginItemOff LoginItemStatus = iota
+	LoginItemOn
+	LoginItemRequiresApproval
+	LoginItemUnavailable LoginItemStatus = -1
+)
+
+func LoginItem(action string) (LoginItemStatus, error) {
 	a := C.CString(action)
 	defer C.free(unsafe.Pointer(a))
 	var message *C.char
-	status := int(C.nj_service(a, &message))
+	status := LoginItemStatus(C.nj_login_item(a, &message))
 	if status < 0 {
-		return status, cError(message)
+		return LoginItemUnavailable, cError(message)
 	}
 	return status, nil
 }

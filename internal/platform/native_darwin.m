@@ -50,24 +50,32 @@ int nj_peer(int fd, const char *requirement, unsigned int *uid, char **error) {
     return 0;
 }
 
-int nj_service(const char *action, char **error) {
+int nj_login_item(const char *action, char **error) {
     @autoreleasepool {
         if (@available(macOS 13.0, *)) {
-            SMAppService *service = [SMAppService daemonServiceWithPlistName:@"dev.nativejet.helper.plist"];
+            NSBundle *bundle = [NSBundle mainBundle];
+            if (![bundle.bundleURL.pathExtension isEqualToString:@"app"] || !bundle.bundleIdentifier.length)
+                return fail(error, "请从打包后的 NativeJet.app 启动，再设置登录项");
+            SMAppService *service = [SMAppService mainAppService];
+            SMAppServiceStatus status = service.status;
             NSError *problem = nil;
             if (!strcmp(action, "register")) {
-                if (![service registerAndReturnError:&problem]) {
-                    if (service.status != SMAppServiceStatusRequiresApproval && service.status != SMAppServiceStatusEnabled)
-                        return fail(error, problem.localizedDescription.UTF8String ?: "后台服务注册失败");
-                }
+                if (status != SMAppServiceStatusEnabled && ![service registerAndReturnError:&problem] &&
+                    service.status != SMAppServiceStatusEnabled && service.status != SMAppServiceStatusRequiresApproval)
+                    return fail(error, problem.localizedDescription.UTF8String ?: "无法添加登录项");
             } else if (!strcmp(action, "unregister")) {
-                if (![service unregisterAndReturnError:&problem]) return fail(error, problem.localizedDescription.UTF8String ?: "后台服务注销失败");
+                if (status != SMAppServiceStatusNotRegistered && status != SMAppServiceStatusNotFound &&
+                    ![service unregisterAndReturnError:&problem] &&
+                    service.status != SMAppServiceStatusNotRegistered)
+                    return fail(error, problem.localizedDescription.UTF8String ?: "无法移除登录项");
             } else if (!strcmp(action, "settings")) {
                 [SMAppService openSystemSettingsLoginItems];
             } else if (strcmp(action, "status")) {
-                return fail(error, "未知服务操作");
+                return fail(error, "未知登录项操作");
             }
-            return (int)service.status;
+            status = service.status;
+            // macOS can report NotFound for a valid app that hasn't registered yet.
+            return (int)(status == SMAppServiceStatusNotFound ? SMAppServiceStatusNotRegistered : status);
         }
         return fail(error, "需要 macOS 13 或更新版本");
     }

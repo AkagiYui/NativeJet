@@ -32,6 +32,10 @@ type App struct {
 	trayDisplay                             menuBarDisplay
 	appearance                              appearancePreferences
 	appearanceError                         string
+	startup                                 startupPreferences
+	startupError                            string
+	loginItem                               loginItemSettings
+	autoStartPending                        bool
 	traffic                                 model.Traffic
 	trafficHistory                          []model.TrafficPoint
 	trafficClient                           *ipc.Client
@@ -92,6 +96,8 @@ type Options struct {
 }
 
 func New(o Options) (*App, error) {
+	// The system launches the app with its default arguments on login.
+	manageLoginItem := o.PreferInstalled && o.Helper == ""
 	if o.Data == "" {
 		base, err := os.UserConfigDir()
 		if err != nil {
@@ -119,6 +125,8 @@ func New(o Options) (*App, error) {
 	}
 	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
 	a.loadAppearance()
+	a.loadStartup()
+	a.loginItem.available = manageLoginItem
 	a.developmentClient = a.client
 	if o.PreferInstalled {
 		a.page = settingsPage
@@ -176,7 +184,7 @@ func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
 			return
 		}
 		a.connecting = nil
-		if client != a.client || a.installing {
+		if a.quitting || client != a.client || a.installing {
 			return
 		}
 		defer a.updateTray()
@@ -186,11 +194,13 @@ func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
 			a.message = "后台服务尚未连接"
 			if a.registration != nil {
 				a.page = settingsPage
+				a.refreshLoginItem()
 			}
 		} else {
 			a.accept(snap, false)
 			a.message = "后台服务已连接"
 			a.problem = snap.Status.Error
+			a.maybeAutoStartCore()
 		}
 	})
 }
@@ -290,6 +300,11 @@ func (a *App) request(method string, params any, success string, done func(json.
 		a.installService(false, a.authorizationKernel(method, params), func() { a.request(method, params, success, done) })
 		return
 	}
+	a.requestHelper(method, params, success, done)
+}
+
+// requestHelper sends the request without asking for administrator authorization.
+func (a *App) requestHelper(method string, params any, success string, done func(json.RawMessage)) {
 	client := a.client
 	after := a.logAfter
 	paused := a.paused
@@ -420,6 +435,7 @@ func (a *App) poll(ctx context.Context) {
 						}
 						a.connected = true
 						a.accept(snap, false)
+						a.maybeAutoStartCore()
 						if !visible {
 							return
 						}
