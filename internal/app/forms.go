@@ -25,22 +25,50 @@ type importForm struct {
 	tab                                int
 	name, url, path, interval, problem string
 	editor                             *editor.State
+	fromLink                           bool
 	busy                               bool
 }
 
 func (a *App) addConfig() {
+	if a.importing != nil {
+		a.importing.win.Focus()
+		return
+	}
 	if a.dirty() {
 		a.problem = "请先保存或撤销当前编辑，再添加配置"
 		return
 	}
+	a.openImportForm(nil)
+}
+
+func (a *App) openImportForm(link *subscriptionLink) {
 	f := &importForm{app: a, name: "新的配置", interval: "24", editor: newEditor("配置内容", false)}
+	if link != nil {
+		f.fromLink = true
+		f.name, f.url = link.name, link.address
+	}
+	a.importing = f
 	f.win = mygo.NewWindow(mygo.WindowOptions{Title: "添加配置", Width: 720, Height: 650, MinWidth: 560, MinHeight: 520, Content: ui.View(f.view)})
+	f.win.OnClose(func(event *mygo.CloseEvent) {
+		if f.busy && !a.quitting {
+			event.PreventDefault()
+		}
+	})
+	f.win.OnClosed(func() {
+		a.importing = nil
+		a.showPendingImport()
+	})
+	f.win.Focus()
 }
 func (f *importForm) view(c *ui.Context) {
 	useWorkspaceTheme(c)
 	ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
-		heading(c, "添加配置", "订阅原文只读；文件和粘贴内容保存为可编辑的本地配置。")
-		ui.Segmented(c, &f.tab, "订阅地址", "添加文件", "粘贴内容")
+		if f.fromLink {
+			heading(c, "导入订阅", "请核对 Clash 链接提供的订阅地址。确认后下载并添加，应用配置需另行操作。")
+		} else {
+			heading(c, "添加配置", "订阅原文只读；文件和粘贴内容保存为可编辑的本地配置。")
+			ui.Segmented(c, &f.tab, "订阅地址", "添加文件", "粘贴内容")
+		}
 		ui.Column(c).FillWidth().Gap(5).Children(func() { muted(c, "配置名称"); ui.TextInput(c, &f.name).FillWidth().Label("配置名称") })
 		switch f.tab {
 		case 0:
@@ -138,6 +166,10 @@ func (f *importForm) submit() {
 		f.problem = "请先完成主窗口中的操作并保存编辑"
 		return
 	}
+	if !f.app.connected {
+		f.problem = "后台服务尚未连接，请稍后重试"
+		return
+	}
 	if strings.TrimSpace(f.name) == "" {
 		f.problem = "请输入配置名称"
 		return
@@ -145,6 +177,12 @@ func (f *importForm) submit() {
 	method := "profile.save"
 	params := map[string]any{"profile": model.Profile{Name: f.name, Kind: "local", Content: f.editor.Buffer.String()}}
 	if f.tab == 0 {
+		if f.fromLink {
+			if _, err := parseWebSubscription(f.url); err != nil {
+				f.problem = err.Error()
+				return
+			}
+		}
 		interval, err := strconv.Atoi(f.interval)
 		if err != nil || interval < 0 {
 			f.problem = "请输入有效的小时数，0 为手动更新"
@@ -177,6 +215,7 @@ func (f *importForm) submit() {
 				return
 			}
 			f.app.selected = p.ID
+			f.app.page = "配置"
 			f.app.tab = 0
 			f.app.accept(snap, true)
 			f.app.message = "配置已添加"

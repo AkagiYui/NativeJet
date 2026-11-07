@@ -20,6 +20,10 @@ func main() {
 		log.Fatal(err)
 	}
 	mygo.App.WhenReady(a.Start)
+	mygo.App.OnOpenURL(func(raw string) {
+		// macOS can deliver the link before the main window is created.
+		mygo.App.WhenReady(func() { a.OpenURL(raw) })
+	})
 	if err = mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}

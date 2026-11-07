@@ -29,6 +29,8 @@ type App struct {
 	win                                     *mygo.Window
 	tray                                    *mygo.Tray
 	quitting                                bool
+	importing                               *importForm
+	pendingImports                          []subscriptionLink
 	client                                  *ipc.Client
 	developmentClient                       *ipc.Client
 	registration                            *installation.Registration

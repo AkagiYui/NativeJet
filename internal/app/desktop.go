@@ -22,6 +22,16 @@ func (a *App) Start() {
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "打开 NativeJet", Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
 			mygo.Separator(),
+			{Label: "将 NativeJet 设为 Clash 链接默认应用", Click: func(*mygo.MenuItem, *mygo.Window) {
+				a.showWindow()
+				if err := mygo.App.RegisterURLScheme("clash"); err != nil {
+					a.problem = "无法设置 Clash 链接的默认应用，请从打包的 NativeJet.app 重试"
+				} else {
+					a.problem = ""
+					a.message = "NativeJet 已设为 Clash 链接的默认应用"
+				}
+				a.win.Invalidate()
+			}},
 			{Label: "退出 NativeJet", Role: mygo.RoleQuit},
 		}),
 	})

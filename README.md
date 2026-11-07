@@ -35,6 +35,10 @@ open build/NativeJet.app
 点击菜单栏的喷气机剪影，选择“打开 NativeJet”可恢复原窗口和 Dock 图标，保留编辑中的内容。
 选择“退出 NativeJet”或在主窗口按 `⌘Q` 可退出界面；内核仍由独立的后台服务管理。
 
+网站的一键导入链接可用 `clash://install-config?url=<编码后的 HTTPS 订阅地址>&name=<编码后的订阅名称>`。
+`name` 可省略。NativeJet 会预填订阅，点击“下载并添加订阅”才会下载。启用订阅时另行点击“应用配置”。
+如系统把链接交给其他 Clash 客户端，可从 NativeJet 菜单栏图标中手动选择“将 NativeJet 设为 Clash 链接默认应用”。
+
 图标的 SVG 源文件位于 `packaging/macos/artwork/`。修改后可用 `python3 scripts/render-icons.py`
 重新生成图标（需 `rsvg-convert`）；正常构建直接使用已生成的资源。
 
