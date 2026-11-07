@@ -54,6 +54,7 @@ func (a *App) refreshService() {
 	if a.client.Development || a.client.Requirement != r.HelperRequirement {
 		a.client = installedClient(r)
 		a.connected = false
+		a.updateTray()
 	}
 	a.connect(context.Background())
 }
@@ -107,6 +108,7 @@ func (a *App) installService(remove bool, approve string, done func()) {
 	a.installing = true
 	a.busy = true
 	a.connected = false
+	a.updateTray()
 	a.problem = ""
 	a.operationCancel = nil
 	a.operationStarted = time.Now()
@@ -238,6 +240,7 @@ func (a *App) installService(remove bool, approve string, done func()) {
 			finish()
 		}
 		a.win.Update(func() {
+			defer a.updateTray()
 			a.installing = false
 			a.busy = false
 			a.client = next

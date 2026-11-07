@@ -28,15 +28,19 @@ import (
 type App struct {
 	win                                     *mygo.Window
 	tray                                    *mygo.Tray
+	trayCoreItem                            *mygo.MenuItem
+	trayRunning                             bool
 	quitting                                bool
 	importing                               *importForm
 	pendingImports                          []subscriptionLink
 	client                                  *ipc.Client
+	connecting                              *ipc.Client
 	developmentClient                       *ipc.Client
 	registration                            *installation.Registration
 	installing                              bool
 	data, helperPath                        string
 	snapshot                                model.Snapshot
+	snapshotVersion                         uint64
 	connected, busy, polling                bool
 	operationCancel                         context.CancelFunc
 	operationStarted                        time.Time
@@ -139,15 +143,27 @@ func newEditor(label string, readonly bool) *editor.State {
 	b.SetLanguage(editor.LanguageFor("config.yaml"))
 	return &editor.State{Buffer: b, ReadOnly: readonly, SoftWrap: true, Label: label, NoScrollPastEnd: true}
 }
-func (a *App) connect(parent context.Context) { go a.connectUsing(parent, a.client) }
+func (a *App) connect(parent context.Context) {
+	client := a.client
+	if a.connecting == client {
+		return
+	}
+	a.connecting = client
+	go a.connectUsing(parent, client)
+}
 func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
 	snap, err := a.connectSnapshot(ctx, client)
 	a.win.Update(func() {
+		if a.connecting != client {
+			return
+		}
+		a.connecting = nil
 		if client != a.client || a.installing {
 			return
 		}
+		defer a.updateTray()
 		a.connected = err == nil
 		if err != nil {
 			a.problem = err.Error()
@@ -192,6 +208,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.connectionsError, a.proxiesError = nil, nil
 	}
 	a.snapshot = snap
+	a.snapshotVersion++
 	if a.selected == "" && len(snap.State.Profiles) > 0 {
 		a.selected = snap.State.Profiles[0].ID
 	}
@@ -249,6 +266,7 @@ func (a *App) request(method string, params any, success string, done func(json.
 	after := a.logAfter
 	paused := a.paused
 	a.busy = true
+	a.updateTray()
 	a.operationStarted = time.Now()
 	a.problem = ""
 	a.message = pendingMessage(method)
@@ -279,6 +297,7 @@ func (a *App) request(method string, params any, success string, done func(json.
 			if client != a.client || a.installing {
 				return
 			}
+			defer a.updateTray()
 			if debug {
 				log.Printf("UI result: %s", method)
 			}
@@ -316,11 +335,16 @@ func (a *App) poll(ctx context.Context) {
 			return
 		case <-ticker.C:
 			mygo.RunOnMain(func() {
-				if a.quitting || !a.win.IsVisible() || a.polling || !a.connected || a.installing {
+				if a.quitting || a.polling || a.connecting != nil || a.installing {
+					return
+				}
+				visible := a.win.IsVisible()
+				if !visible && a.tray == nil {
 					return
 				}
 				a.polling = true
 				client := a.client
+				version := a.snapshotVersion
 				page := a.page
 				after := a.logAfter
 				paused := a.paused
@@ -333,7 +357,7 @@ func (a *App) poll(ctx context.Context) {
 					var logs []model.Log
 					var groups []model.Proxy
 					var connectionsError, proxiesError error
-					if err == nil && snap.Status.Running {
+					if visible && err == nil && snap.Status.Running {
 						switch page {
 						case "连接":
 							connectionsError = client.Call(probe, "connections", nil, &connections)
@@ -341,20 +365,35 @@ func (a *App) poll(ctx context.Context) {
 							proxiesError = client.Call(probe, "proxies", nil, &groups)
 						}
 					}
-					if err == nil && !paused {
+					if visible && err == nil && !paused {
 						_ = client.Call(probe, "logs", map[string]any{"after": after}, &logs)
 					}
-					a.win.Update(func() {
+					mygo.RunOnMain(func() {
 						a.polling = false
-						if client != a.client || a.installing {
+						// A poll can finish after a request has already refreshed the snapshot.
+						if a.quitting || client != a.client || a.connecting != nil || a.installing || version != a.snapshotVersion {
 							return
 						}
+						if a.win.IsVisible() {
+							defer a.win.Invalidate()
+						}
+						defer a.updateTray()
 						if err != nil {
-							a.connected = false
-							a.problem = err.Error()
+							if a.connected {
+								a.connected = false
+								a.problem = err.Error()
+							}
 							return
 						}
+						if !a.connected && !a.busy {
+							a.message = "后台服务已连接"
+							a.problem = snap.Status.Error
+						}
+						a.connected = true
 						a.accept(snap, false)
+						if !visible {
+							return
+						}
 						switch page {
 						case "连接":
 							a.connections = connections

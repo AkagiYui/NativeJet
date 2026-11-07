@@ -196,6 +196,7 @@ func (f *importForm) submit() {
 	}
 	f.busy = true
 	f.app.busy = true
+	f.app.updateTray()
 	f.app.win.Invalidate()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -209,6 +210,7 @@ func (f *importForm) submit() {
 		f.win.Update(func() {
 			f.busy = false
 			f.app.busy = false
+			defer f.app.updateTray()
 			f.app.win.Invalidate()
 			if err != nil {
 				f.problem = err.Error()

@@ -32,7 +32,7 @@ open build/NativeJet.app
 ```
 
 关闭主窗口（红色按钮或 `⌘W`）会隐藏 Dock 图标，NativeJet 继续在 macOS 菜单栏运行。
-点击菜单栏的喷气机剪影，选择“打开 NativeJet”可恢复原窗口和 Dock 图标，保留编辑中的内容。
+点击菜单栏的火箭剪影，选择“打开 NativeJet”可恢复原窗口和 Dock 图标，保留编辑中的内容。
 选择“退出 NativeJet”或在主窗口按 `⌘Q` 可退出界面；内核仍由独立的后台服务管理。
 
 网站的一键导入链接可用 `clash://install-config?url=<编码后的 HTTPS 订阅地址>&name=<编码后的订阅名称>`。

@@ -8,6 +8,7 @@ import subprocess
 root = Path(__file__).resolve().parent.parent
 macos = root / "packaging/macos"
 artwork = macos / "artwork"
+app_assets = root / "internal/app/assets"
 
 
 def render(name, *options):
@@ -29,4 +30,6 @@ pngs = {size: render("NativeJet.svg", "-w", str(size), "-h", str(size))
 (macos / "NativeJet.icns").write_bytes(chunk(b"icns", b"".join(
     chunk(kind, pngs[size]) for kind, size in representations
 )))
-(root / "internal/app/assets/MenuBarTemplate.png").write_bytes(render("MenuBarTemplate.svg"))
+for name in ("MenuBarTemplate", "MenuBarOutlineTemplate"):
+    (app_assets / f"{name}.png").write_bytes(render(f"{name}.svg"))
+    (app_assets / f"{name}.svg").write_bytes((artwork / f"{name}.svg").read_bytes())

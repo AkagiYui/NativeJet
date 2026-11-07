@@ -1,14 +1,22 @@
 package app
 
 import (
+	_ "embed"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"nativejet/internal/buildinfo"
 )
 
+//go:embed assets/MenuBarTemplate.svg
+var brandIconSVG []byte
+
+//go:embed assets/MenuBarOutlineTemplate.svg
+var brandOutlineSVG []byte
+
 var (
-	jetIcon      = outlineIcon(`<path d="M2 10.5 21 3l-5.5 18-5-6-4 3v-5zM10.5 15 21 3"/>`)
+	brandIcon    = ui.MustParseSVG(brandIconSVG)
+	brandOutline = ui.MustParseSVG(brandOutlineSVG)
 	kernelIcon   = outlineIcon(`<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/>`)
 	configIcon   = outlineIcon(`<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M8 12h8m-8 4h6"/>`)
 	proxiesIcon  = outlineIcon(`<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>`)
@@ -55,12 +63,16 @@ func (a *App) view(c *ui.Context) {
 func (a *App) sidebar(c *ui.Context) {
 	p := palette(c)
 	bar := c.TitleBar()
+	icon := brandOutline
+	if a.coreRunning() {
+		icon = brandIcon
+	}
 	ui.Column(c).Width(sidebarWidth).FillHeight().Shrink(0).Background(p.rail).
 		BorderWidth(0, 1, 0, 0).BorderColor(p.line).Children(func() {
 		ui.Row(c).FillWidth().Height(max(toolbarHeight, bar.Height)).Shrink(0).
 			Padding(0, 12, 0, max(12, bar.Left+8)).Gap(7).AlignItems(ui.Center).DragWindow().Children(func() {
 			ui.Box(c).Size(22, 22).Center().Radius(controlRadius).Background(p.active).Children(func() {
-				ui.Icon(c, jetIcon).Size(15, 15).TextColor(p.Text)
+				ui.Icon(c, icon).Size(15, 15).TextColor(p.Text)
 			})
 			ui.Text(c, "NativeJet").FontWeight(600).SingleLine()
 		})
@@ -113,12 +125,12 @@ func (a *App) kernelStatus(c *ui.Context) {
 	if version == "" {
 		version = "尚未选择内核"
 	}
-	state, button, method := "已停止", "启动内核", "core.start"
+	state, button := "已停止", "启动内核"
 	ink := t.TextMuted
 	if !a.connected {
 		state = "未连接"
 	} else if status.Running {
-		state, button, method = "运行中", "停止内核", "core.stop"
+		state, button = "运行中", "停止内核"
 		ink = t.Success
 	}
 	ui.Column(c).FillWidth().Padding(10, 12, 12).Gap(8).Shrink(0).
@@ -130,7 +142,7 @@ func (a *App) kernelStatus(c *ui.Context) {
 		})
 		ui.Text(c, version).FontSize(11).TextColor(t.TextMuted).SingleLine().Tooltip(version)
 		if action(c, nil, button, false).FillWidth().Disabled(a.busy || !a.connected).Clicked() {
-			a.request(method, nil, "内核状态已更新", nil)
+			a.toggleCore()
 		}
 	})
 }
