@@ -1,0 +1,516 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
+	"nativejet/internal/config"
+	"nativejet/internal/ipc"
+	"nativejet/internal/model"
+	"nativejet/internal/platform"
+)
+
+// The test executable only implements the control API. It has no TUN, proxy
+// listener, DNS changes or external requests.
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-v":
+			fmt.Println("Mihomo TestFixture darwin")
+			os.Exit(0)
+		case "-t":
+			fmt.Fprintln(os.Stderr, "fixture: unexpected config validation")
+			os.Exit(1)
+		case "-d":
+			fixtureCore()
+			os.Exit(0)
+		}
+	}
+	os.Exit(m.Run())
+}
+func arg(key string) string {
+	for i, v := range os.Args {
+		if v == key && i+1 < len(os.Args) {
+			return os.Args[i+1]
+		}
+	}
+	return ""
+}
+func fixtureCore() {
+	data, err := os.ReadFile(arg("-f"))
+	if err != nil {
+		os.Exit(2)
+	}
+	var cfg map[string]any
+	if err = yaml.Unmarshal(data, &cfg); err != nil {
+		os.Exit(2)
+	}
+	if cfg["test-startup-fatal"] == true {
+		fmt.Fprint(os.Stderr, `time="2026-11-06T11:05:59-08:00" level=fatal msg="listen tcp 127.0.0.1:7897: bind: address already in use"`)
+		os.Exit(1)
+	}
+
+	fmt.Fprintln(os.Stdout, `level=info msg="fixture startup output"`)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	socket, _ := cfg["external-controller-unix"].(string)
+	address, _ := cfg["external-controller"].(string)
+	secret, _ := cfg["secret"].(string)
+	network := "tcp"
+	if socket != "" {
+		network, address, secret = "unix", socket, ""
+		_ = os.Remove(socket)
+	}
+	if address == "" {
+		<-ctx.Done()
+		return
+	}
+	listener, err := net.Listen(network, address)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	server := &http.Server{}
+	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if secret != "" && r.Header.Get("Authorization") != "Bearer "+secret {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/version", "/configs":
+			fmt.Fprintln(os.Stderr, "fixture: unexpected config or readiness request")
+			http.NotFound(w, r)
+		case "/logs":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_ = json.NewEncoder(w).Encode(map[string]string{"type": "info", "payload": "fixture log stream"})
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		case "/connections":
+			_ = json.NewEncoder(w).Encode(model.Connections{Connections: []model.Connection{}})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	go func() { <-ctx.Done(); _ = server.Close() }()
+	_ = server.Serve(listener)
+	_ = os.Remove(socket)
+}
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+	base := t.TempDir()
+	m, err := New(Options{Data: filepath.Join(base, "data"), Inbox: filepath.Join(base, "kernels"), UID: os.Getuid(), GID: os.Getgid()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Shutdown(); _ = os.RemoveAll(m.runtime) })
+	return m
+}
+func installFixture(t *testing.T, m *Manager) {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(m.kernel.Inbox, "fixture-mihomo"), data, 0755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	kernels, err := m.Scan(ctx)
+	if err != nil || len(kernels) != 1 {
+		t.Fatalf("scan: %v %#v", err, kernels)
+	}
+	if kernels[0].Error != "" {
+		t.Fatal(kernels[0].Error)
+	}
+	if err = m.SelectKernel(ctx, kernels[0].ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrivilegedKernelRequiresExplicitHashApproval(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	m.approvedKernels = map[string]bool{}
+	p, err := m.SaveProfile(model.Profile{Name: "authorization", Kind: "local", Content: "mode: rule\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err == nil || !strings.Contains(err.Error(), "管理员授权") {
+		t.Fatalf("unapproved core was accepted: %v", err)
+	}
+	snap := m.Snapshot()
+	if snap.Status.KernelAuthorized || snap.State.ActiveRevision != "" {
+		t.Fatal("unapproved core was applied")
+	}
+	m.approvedKernels = map[string]bool{snap.State.SelectedKernel: true}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Snapshot().Status.KernelAuthorized {
+		t.Fatal("approval was not exposed to GUI")
+	}
+}
+
+func TestStartupFailureIncludesFinalStderrAndIgnoresPreviousAttempt(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	if err := m.SaveOverride("", "external-controller-unix: fixture-api.sock\nmixed-port: 7897\ntun:\n  enable: false\n"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.SaveProfile(model.Profile{Name: "startup", Kind: "local", Content: "mode: rule\ntest-startup-fatal: true\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.core.Logs.Add("error", "process", `level=error msg="Start TUN listening error: configure tun interface: add route: 1.0.0.0/8: file exists"`)
+	err = m.Start(ctx)
+	if err == nil || !strings.Contains(err.Error(), "端口已被占用") || !strings.Contains(err.Error(), "127.0.0.1:7897") || strings.Contains(err.Error(), "TUN 路由冲突") {
+		t.Fatalf("incorrect startup diagnostic: %v", err)
+	}
+	if m.core.Running() || m.Snapshot().Status.Error != err.Error() {
+		t.Fatal("startup failure was not retained for GUI")
+	}
+	found := false
+	for _, entry := range m.Logs(0) {
+		if entry.Source == "process" && entry.Level == "error" && strings.Contains(entry.Message, "level=fatal") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("final stderr without newline was discarded")
+	}
+	p.Content = "mode: rule\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Start(ctx); err != nil {
+		t.Fatalf("old error prevented retry: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stream, output := false, false
+		for _, entry := range m.Logs(0) {
+			if entry.Source == "core" && entry.Message == "fixture log stream" {
+				stream = true
+			}
+			if entry.Source == "process" && strings.Contains(entry.Message, "fixture startup output") {
+				output = true
+			}
+		}
+		if stream && output {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("startup output or live core log stream was missing")
+}
+
+func TestApplyRestartsCoreAndRollsBackOnProcessExit(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	if err := m.SaveOverride("", "external-controller-unix: fixture-api.sock\ntun:\n  enable: false\n"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.SaveProfile(model.Profile{Name: "local", Kind: "local", Content: "mode: rule\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m.core.Running() {
+		t.Fatal("applying while stopped started the core")
+	}
+	if err = m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	first := m.Snapshot().Status
+	p.Content = "mode: global\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	applied := m.Snapshot().Status
+	if !applied.Running || applied.PID == first.PID || applied.ActiveRevision == first.ActiveRevision {
+		t.Fatal("applying with the same controller did not restart the core")
+	}
+	if values, err := m.revisionValues(applied.ActiveRevision); err != nil || values["mode"] != "global" {
+		t.Fatalf("the new revision was not saved: %v", err)
+	}
+	if _, err = m.Preview(p.ID, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range m.Logs(0) {
+		if strings.Contains(entry.Message, "fixture: unexpected") {
+			t.Fatal(entry.Message)
+		}
+	}
+
+	p.Content = "mode: rule\ntest-startup-fatal: true\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Apply(ctx, p.ID); err == nil || !strings.Contains(err.Error(), "端口已被占用") {
+		t.Fatalf("restart did not report the child process failure: %v", err)
+	}
+	restored := m.Snapshot()
+	if !restored.Status.Running || restored.Status.PID == applied.PID || restored.State.ActiveRevision != applied.ActiveRevision ||
+		restored.State.Process == nil || restored.State.Process.RevisionID != applied.ActiveRevision || len(restored.State.Revisions) != 2 {
+		t.Fatal("the failed restart did not restore the previous revision")
+	}
+}
+
+func TestUserControllerAndRunningWithoutIt(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	if err = m.SaveOverride("", "tun:\n  enable: false\nsecret: user-key\n"); err != nil {
+		t.Fatal(err)
+	}
+	source := "mode: rule\nexternal-ui: dashboard\nexternal-controller: " + address + "\n"
+	p, err := m.SaveProfile(model.Profile{Name: "controller", Kind: "local", Content: source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	applied := m.clone().ActiveRevision
+	values, err := m.revisionValues(applied)
+	if err != nil || values["external-controller"] != address || values["external-ui"] != "dashboard" ||
+		values["secret"] != "user-key" || values["external-controller-unix"] != nil {
+		t.Fatalf("user controller configuration was changed: %v", err)
+	}
+	if err = m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before := m.Snapshot().Status
+	if !before.Running {
+		t.Fatal("core was not running")
+	}
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		if _, err = m.Core(ctx, http.MethodGet, "/connections", nil); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("could not reach the configured authenticated controller: %v", err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	p.Content = "mode: global\ntest-startup-fatal: true\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Apply(ctx, p.ID); err == nil {
+		t.Fatal("failed restart was accepted")
+	}
+	rolledBack := m.Snapshot().Status
+	if !rolledBack.Running || rolledBack.ActiveRevision != applied {
+		t.Fatal("the previous controller was not restored")
+	}
+	p.Content = "mode: global\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	after := m.Snapshot().Status
+	_, err = m.Core(ctx, http.MethodGet, "/connections", nil)
+	if !after.Running || after.PID == rolledBack.PID || err == nil || !strings.Contains(err.Error(), "未启用") {
+		t.Fatal("core did not continue with the controller disabled")
+	}
+}
+
+func TestStartRegeneratesOldAppliedRevisionFromSavedLayers(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	if err := m.SaveOverride("", "tun:\n  enable: false\n"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.SaveProfile(model.Profile{Name: "old revision", Kind: "local", Content: "mode: rule\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	state := m.clone()
+	old := state.ActiveRevision
+	legacy, _, err := config.Compile(config.Layer{Content: "mode: rule\ntun:\n  enable: false\nexternal-controller-unix: old-api.sock\nsecret: old-generated\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Revisions[0].Hash = legacy.Hash
+	if err = os.WriteFile(m.revisionPath(old), []byte(legacy.YAML), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.commit(state); err != nil {
+		t.Fatal(err)
+	}
+	p.Content = "mode: global\n"
+	if _, err = m.SaveProfile(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	state = m.clone()
+	values, err := m.revisionValues(state.ActiveRevision)
+	if err != nil || state.ActiveRevision == old || values["mode"] != "rule" ||
+		values["external-controller-unix"] != nil || values["secret"] != nil {
+		t.Fatalf("old revision was not regenerated from its saved layers: %v", err)
+	}
+	if state.Profiles[0].Content != p.Content || state.Revisions[0].ID != old {
+		t.Fatal("pending edits or history were lost")
+	}
+}
+
+func TestSubscriptionReadOnlyAndUpdatesRemainPending(t *testing.T) {
+	m := newTestManager(t)
+	var content atomic.Value
+	content.Store("mixed-port: 7890\nrules: ['MATCH,DIRECT']\n")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.UserAgent() != "clash.meta" {
+			t.Error("subscription user agent")
+		}
+		fmt.Fprint(w, content.Load().(string))
+	}))
+	defer server.Close()
+	p, err := m.Subscribe(context.Background(), "sub", server.URL, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Content = "mixed-port: 1234\n"
+	if _, err = m.SaveProfile(p); err == nil {
+		t.Fatal("subscription raw content was editable")
+	}
+	content.Store("mixed-port: 7891\n")
+	if err = m.UpdateSubscription(context.Background(), p.ID); err != nil {
+		t.Fatal(err)
+	}
+	s := m.clone()
+	if s.ActiveRevision != "" || s.ActiveProfile != "" {
+		t.Fatal("subscription update applied automatically")
+	}
+	if s.Profiles[0].Content != content.Load().(string) {
+		t.Fatal("updated subscription not saved")
+	}
+	content.Store("broken: [")
+	if err = m.UpdateSubscription(context.Background(), p.ID); err == nil {
+		t.Fatal("broken download accepted")
+	}
+	if m.clone().Profiles[0].Content != "mixed-port: 7891\n" {
+		t.Fatal("failed subscription update replaced old source")
+	}
+}
+func TestIPCProtocolAndPersistence(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "helper.sock")
+	if len(socket) > 100 {
+		short, err := os.MkdirTemp("/private/tmp", "nj-ipc-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(short)
+		socket = filepath.Join(short, "s")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	exe, _ := os.Executable()
+	requirement, err := platform.SigningRequirement(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Development: true, Socket: socket, Data: filepath.Join(dir, "data"), Inbox: filepath.Join(dir, "kernels"), PeerRequirement: requirement}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(ctx) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	client := &ipc.Client{Socket: socket, Development: true, Requirement: requirement}
+	var snap model.Snapshot
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := client.Call(context.Background(), "snapshot", nil, &snap)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if snap.Status.Protocol != 1 || snap.Status.Privileged {
+		t.Fatal("incorrect helper identity")
+	}
+	// A different, legitimately signed OS executable must not gain access.
+	payload, _ := json.Marshal(ipc.Request{Version: 1, Method: "snapshot"})
+	command := exec.Command("/usr/bin/curl", "--silent", "--show-error", "--max-time", "2", "--unix-socket", socket, "--data", string(payload), "http://helper/v1")
+	if output, err := command.CombinedOutput(); err == nil {
+		t.Fatalf("untrusted executable reached signed helper: %s", output)
+	}
+	var p model.Profile
+	if err := client.Call(context.Background(), "profile.save", map[string]any{"profile": model.Profile{Name: "pasted", Kind: "local", Content: "mode: rule\n"}}, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.ID == "" {
+		t.Fatal("missing created profile")
+	}
+	if err := client.Call(context.Background(), "shell.exec", map[string]string{"text": "unexpected"}, nil); err == nil {
+		t.Fatal("helper accepted an arbitrary command")
+	}
+	if err := client.Call(context.Background(), "config.apply", map[string]string{"id": p.ID}, nil); err == nil {
+		t.Fatal("apply succeeded without a selected core")
+	}
+	if err := client.Call(context.Background(), "snapshot", nil, &snap); err != nil {
+		t.Fatal(err)
+	}
+	if len(snap.State.Profiles) != 1 || snap.State.Profiles[0].Content != "mode: rule\n" {
+		t.Fatal("saved local profile missing")
+	}
+}

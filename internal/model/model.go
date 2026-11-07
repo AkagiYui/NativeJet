@@ -1,0 +1,152 @@
+package model
+
+import "time"
+
+const ProtocolVersion = 1
+
+type Profile struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Kind             string    `json:"kind"`
+	URL              string    `json:"url,omitempty"`
+	Content          string    `json:"content"`
+	Override         string    `json:"override"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+	IntervalHours    int       `json:"intervalHours"`
+	SubscriptionInfo string    `json:"subscriptionInfo,omitempty"`
+	ETag             string    `json:"etag,omitempty"`
+}
+
+type Kernel struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Version   string `json:"version"`
+	Arch      string `json:"arch"`
+	Error     string `json:"error,omitempty"`
+	Installed bool   `json:"installed"`
+}
+
+type Revision struct {
+	ID              string    `json:"id"`
+	ProfileID       string    `json:"profileId"`
+	KernelID        string    `json:"kernelId"`
+	CreatedAt       time.Time `json:"createdAt"`
+	Hash            string    `json:"hash"`
+	Source          string    `json:"source"`
+	GlobalOverride  string    `json:"globalOverride"`
+	ProfileOverride string    `json:"profileOverride"`
+}
+
+type ProcessRecord struct {
+	PID                int    `json:"pid"`
+	Path               string `json:"path"`
+	StartTime          int64  `json:"startTime"`
+	RevisionID         string `json:"revisionId"`
+	ControllerOccupied bool   `json:"controllerOccupied,omitempty"`
+}
+
+type State struct {
+	Version        int            `json:"version"`
+	Profiles       []Profile      `json:"profiles"`
+	GlobalOverride string         `json:"globalOverride"`
+	SelectedKernel string         `json:"selectedKernel"`
+	ActiveProfile  string         `json:"activeProfile"`
+	ActiveRevision string         `json:"activeRevision"`
+	Revisions      []Revision     `json:"revisions"`
+	Installed      []Kernel       `json:"installed"`
+	Process        *ProcessRecord `json:"process,omitempty"`
+}
+
+type Trace struct {
+	Layer   string `json:"layer"`
+	Value   any    `json:"value"`
+	Line    int    `json:"line,omitempty"`
+	Deleted bool   `json:"deleted,omitempty"`
+}
+
+type Field struct {
+	Path   string  `json:"path"`
+	Value  any     `json:"value"`
+	Source string  `json:"source"`
+	Trace  []Trace `json:"trace"`
+}
+
+type Preview struct {
+	YAML   string  `json:"yaml"`
+	Hash   string  `json:"hash"`
+	Fields []Field `json:"fields"`
+}
+
+type Status struct {
+	Protocol          int      `json:"protocol"`
+	Privileged        bool     `json:"privileged"`
+	Running           bool     `json:"running"`
+	PID               int      `json:"pid"`
+	KernelVersion     string   `json:"kernelVersion"`
+	KernelPath        string   `json:"kernelPath"`
+	ConfigPath        string   `json:"configPath"`
+	ActiveRevision    string   `json:"activeRevision"`
+	ActiveProfile     string   `json:"activeProfile"`
+	Error             string   `json:"error,omitempty"`
+	KernelDirectory   string   `json:"kernelDirectory"`
+	RuntimeDirectory  string   `json:"runtimeDirectory"`
+	KernelAuthorized  bool     `json:"kernelAuthorized"`
+	ActiveTUN         bool     `json:"activeTun"`
+	AuthorizedKernels []string `json:"authorizedKernels,omitempty"`
+}
+
+type Snapshot struct {
+	State   State    `json:"state"`
+	Status  Status   `json:"status"`
+	Kernels []Kernel `json:"kernels"`
+}
+
+type Log struct {
+	Sequence uint64    `json:"sequence"`
+	Time     time.Time `json:"time"`
+	Level    string    `json:"level"`
+	Source   string    `json:"source"`
+	Message  string    `json:"message"`
+}
+
+type Connection struct {
+	ID       string `json:"id"`
+	Metadata struct {
+		Network         string `json:"network"`
+		Type            string `json:"type"`
+		Host            string `json:"host"`
+		DestinationIP   string `json:"destinationIP"`
+		DestinationPort string `json:"destinationPort"`
+		Process         string `json:"process"`
+		ProcessPath     string `json:"processPath"`
+	} `json:"metadata"`
+	Upload      int64    `json:"upload"`
+	Download    int64    `json:"download"`
+	Start       string   `json:"start"`
+	Chains      []string `json:"chains"`
+	Rule        string   `json:"rule"`
+	RulePayload string   `json:"rulePayload"`
+}
+
+type Connections struct {
+	Connections   []Connection `json:"connections"`
+	UploadTotal   int64        `json:"uploadTotal"`
+	DownloadTotal int64        `json:"downloadTotal"`
+}
+
+type Proxy struct {
+	Name string   `json:"name"`
+	Type string   `json:"type"`
+	Now  string   `json:"now"`
+	All  []string `json:"all"`
+}
+
+type Release struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	AssetID int64  `json:"assetId"`
+	Size    int64  `json:"size"`
+	Digest  string `json:"digest,omitempty"`
+	URL     string `json:"-"`
+}

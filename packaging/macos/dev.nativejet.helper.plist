@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.nativejet.helper</string>
+  <key>BundleProgram</key><string>Contents/Library/LaunchServices/nativejet-helper</string>
+  <key>ProgramArguments</key><array><string>nativejet-helper</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>12</integer>
+  <key>Umask</key><integer>63</integer>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>

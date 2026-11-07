@@ -1,0 +1,497 @@
+// Package app contains only presentation and helper-client code. It never
+// starts a core process or talks to a core controller directly.
+package app
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
+	"nativejet/internal/buildinfo"
+	"nativejet/internal/installation"
+	"nativejet/internal/ipc"
+	"nativejet/internal/model"
+)
+
+type App struct {
+	win                                     *mygo.Window
+	tray                                    *mygo.Tray
+	quitting                                bool
+	client                                  *ipc.Client
+	developmentClient                       *ipc.Client
+	registration                            *installation.Registration
+	installing                              bool
+	data, helperPath                        string
+	snapshot                                model.Snapshot
+	connected, busy, polling                bool
+	operationCancel                         context.CancelFunc
+	operationStarted                        time.Time
+	message, problem                        string
+	page, selected, loaded                  string
+	tab, scope, format, field               int
+	fields                                  ui.ListState
+	source, global, override, final         *editor.State
+	savedSource, savedGlobal, savedOverride string
+	preview                                 model.Preview
+	connections                             model.Connections
+	connectionsError, proxiesError          error
+	connectionIndex                         int
+	connectionRows                          ui.ListState
+	kernelRows                              ui.ListState
+	kernelSelection                         int
+	logRows                                 ui.ListState
+	logSearch                               string
+	logSource                               string
+	logSelection                            int
+	logSelected, logDetailSequence          uint64
+	logDetail                               *editor.State
+	connectionTab                           int
+	groups                                  []model.Proxy
+	logs                                    []model.Log
+	logAfter                                uint64
+	logLevel, search                        string
+	paused                                  bool
+	helperState                             int
+	helperError                             string
+}
+
+type Options struct {
+	Data, Helper          string
+	Development           bool
+	PrivilegedDevelopment bool
+	PreferInstalled       bool
+}
+
+func New(o Options) (*App, error) {
+	if o.Data == "" {
+		base, err := os.UserConfigDir()
+		if err != nil {
+			return nil, err
+		}
+		o.Data = filepath.Join(base, "NativeJet")
+	}
+	socket := buildinfo.Socket
+	if o.Development {
+		if err := os.MkdirAll(o.Data, 0700); err != nil {
+			return nil, err
+		}
+		socket = filepath.Join(o.Data, "helper.sock")
+		if len(socket) > 100 {
+			sum := sha256.Sum256([]byte(o.Data))
+			socket = filepath.Join(os.TempDir(), "nativejet-ui-"+hex.EncodeToString(sum[:6])+".sock")
+		}
+	}
+	if o.Helper == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		o.Helper = filepath.Join(filepath.Dir(filepath.Dir(exe)), "Library/LaunchServices/nativejet-helper")
+	}
+	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
+	a.developmentClient = a.client
+	if o.PreferInstalled {
+		a.page = "后台服务"
+		if registration, err := installation.LoadRegistration(); err == nil {
+			a.registration = &registration
+			a.client = installedClient(registration)
+			a.page = "配置"
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			a.helperError = err.Error()
+		}
+	}
+	if o.PrivilegedDevelopment {
+		requirement, err := signingRequirement(o.Helper)
+		if err != nil {
+			return nil, err
+		}
+		a.client.Requirement = requirement
+	}
+	a.fields.Selected = &a.field
+	a.connectionRows.Selected = &a.connectionIndex
+	a.kernelRows.Selected = &a.kernelSelection
+	a.logRows.Selected = &a.logSelection
+	a.logDetail = newEditor("日志完整内容", true)
+	a.logDetail.Buffer.SetLanguage(nil)
+	a.source = newEditor("原始配置", false)
+	a.global = newEditor("全局覆盖", false)
+	a.override = newEditor("当前配置覆盖", false)
+	a.final = newEditor("最终配置", true)
+	return a, nil
+}
+func newEditor(label string, readonly bool) *editor.State {
+	b := editor.NewBuffer("")
+	b.SetLanguage(editor.LanguageFor("config.yaml"))
+	return &editor.State{Buffer: b, ReadOnly: readonly, SoftWrap: true, Label: label, NoScrollPastEnd: true}
+}
+func (a *App) connect(parent context.Context) { go a.connectUsing(parent, a.client) }
+func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
+	defer cancel()
+	snap, err := a.connectSnapshot(ctx, client)
+	a.win.Update(func() {
+		if client != a.client || a.installing {
+			return
+		}
+		a.connected = err == nil
+		if err != nil {
+			a.problem = err.Error()
+			a.message = "后台服务尚未连接"
+			if a.registration != nil {
+				a.page = "后台服务"
+			}
+		} else {
+			a.accept(snap, false)
+			a.message = "后台服务已连接"
+			a.problem = snap.Status.Error
+		}
+	})
+}
+func (a *App) connectSnapshot(ctx context.Context, client *ipc.Client) (model.Snapshot, error) {
+	var snap model.Snapshot
+	err := client.Call(ctx, "snapshot", nil, &snap)
+	if err == nil || !client.Development {
+		return snap, err
+	}
+	logfile, err := os.OpenFile(filepath.Join(a.data, "helper.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return snap, err
+	}
+	cmd := exec.Command(a.helperPath, "--development", "--socket", client.Socket, "--data-dir", filepath.Join(a.data, "development"), "--kernel-dir", filepath.Join(a.data, "kernels"))
+	cmd.Stdout = logfile
+	cmd.Stderr = logfile
+	if err = cmd.Start(); err != nil {
+		logfile.Close()
+		return snap, fmt.Errorf("启动后台服务失败: %w", err)
+	}
+	go func() { _ = cmd.Wait(); logfile.Close() }()
+	return waitSnapshot(ctx, client)
+}
+func (a *App) accept(snap model.Snapshot, force bool) {
+	if !a.busy && snap.Status.Error != "" && snap.Status.Error != a.snapshot.Status.Error {
+		a.problem = snap.Status.Error
+	}
+	if snap.Status.PID != a.snapshot.Status.PID {
+		a.connections = model.Connections{}
+		a.groups = nil
+		a.connectionsError, a.proxiesError = nil, nil
+	}
+	a.snapshot = snap
+	if a.selected == "" && len(snap.State.Profiles) > 0 {
+		a.selected = snap.State.Profiles[0].ID
+	}
+	p := a.current()
+	if p == nil {
+		a.loaded = ""
+		return
+	}
+	if force || a.loaded != p.ID {
+		a.source.Buffer.Reset(p.Content)
+		a.source.Buffer.MarkSaved()
+		a.savedSource = p.Content
+		a.global.Buffer.Reset(snap.State.GlobalOverride)
+		a.global.Buffer.MarkSaved()
+		a.savedGlobal = snap.State.GlobalOverride
+		a.override.Buffer.Reset(p.Override)
+		a.override.Buffer.MarkSaved()
+		a.savedOverride = p.Override
+		a.loaded = p.ID
+		a.preview = model.Preview{}
+	} else {
+		if !a.source.Buffer.Modified() && a.savedSource != p.Content {
+			a.source.Buffer.Reset(p.Content)
+			a.source.Buffer.MarkSaved()
+			a.savedSource = p.Content
+		}
+		if !a.global.Buffer.Modified() && a.savedGlobal != snap.State.GlobalOverride {
+			a.global.Buffer.Reset(snap.State.GlobalOverride)
+			a.global.Buffer.MarkSaved()
+			a.savedGlobal = snap.State.GlobalOverride
+		}
+	}
+	a.source.ReadOnly = p.Kind == "subscription" || a.busy
+}
+func (a *App) current() *model.Profile {
+	for i := range a.snapshot.State.Profiles {
+		if a.snapshot.State.Profiles[i].ID == a.selected {
+			return &a.snapshot.State.Profiles[i]
+		}
+	}
+	return nil
+}
+func (a *App) dirty() bool {
+	return a.source.Buffer.Modified() || a.global.Buffer.Modified() || a.override.Buffer.Modified()
+}
+func (a *App) request(method string, params any, success string, done func(json.RawMessage)) {
+	if a.busy {
+		return
+	}
+	if a.needsServiceAuthorization(method, params) {
+		a.installService(false, a.authorizationKernel(method, params), func() { a.request(method, params, success, done) })
+		return
+	}
+	client := a.client
+	after := a.logAfter
+	paused := a.paused
+	a.busy = true
+	a.operationStarted = time.Now()
+	a.problem = ""
+	a.message = pendingMessage(method)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	a.operationCancel = cancel
+	debug := os.Getenv("NATIVEJET_DEBUG") == "1"
+	if debug {
+		log.Printf("helper request: %s", method)
+	}
+	go func() {
+		defer cancel()
+		var raw json.RawMessage
+		err := client.Call(ctx, method, params, &raw)
+		if debug {
+			log.Printf("helper result: %s, error=%v", method, err)
+		}
+		var snap model.Snapshot
+		probe, finishProbe := context.WithTimeout(context.Background(), 3*time.Second)
+		snapshotErr := client.Call(probe, "snapshot", nil, &snap)
+		finishProbe()
+		var logs []model.Log
+		if err != nil && !paused {
+			logProbe, finish := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = client.Call(logProbe, "logs", map[string]any{"after": after}, &logs)
+			finish()
+		}
+		a.win.Update(func() {
+			if client != a.client || a.installing {
+				return
+			}
+			if debug {
+				log.Printf("UI result: %s", method)
+			}
+			a.busy = false
+			a.operationCancel = nil
+			a.appendLogs(logs)
+			if snapshotErr == nil {
+				a.connected = true
+				a.accept(snap, false)
+			}
+			if err != nil {
+				a.problem = err.Error()
+				switch {
+				case errors.Is(err, context.Canceled):
+					a.problem = "操作已取消；请以已应用版本和后台日志为准。"
+				case errors.Is(err, context.DeadlineExceeded):
+					a.problem = "等待后台操作超时；请查看已应用版本和后台日志。"
+				}
+				a.message = "操作未完成"
+				return
+			}
+			a.message = success
+			if done != nil {
+				done(raw)
+			}
+		})
+	}()
+}
+func (a *App) poll(ctx context.Context) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			mygo.RunOnMain(func() {
+				if a.quitting || !a.win.IsVisible() || a.polling || !a.connected || a.installing {
+					return
+				}
+				a.polling = true
+				client := a.client
+				page := a.page
+				after := a.logAfter
+				paused := a.paused
+				go func() {
+					probe, cancel := context.WithTimeout(ctx, 5*time.Second)
+					defer cancel()
+					var snap model.Snapshot
+					err := client.Call(probe, "snapshot", nil, &snap)
+					var connections model.Connections
+					var logs []model.Log
+					var groups []model.Proxy
+					var connectionsError, proxiesError error
+					if err == nil && snap.Status.Running && page == "连接" {
+						connectionsError = client.Call(probe, "connections", nil, &connections)
+						proxiesError = client.Call(probe, "proxies", nil, &groups)
+					}
+					if err == nil && !paused {
+						_ = client.Call(probe, "logs", map[string]any{"after": after}, &logs)
+					}
+					a.win.Update(func() {
+						a.polling = false
+						if client != a.client || a.installing {
+							return
+						}
+						if err != nil {
+							a.connected = false
+							a.problem = err.Error()
+							return
+						}
+						a.accept(snap, false)
+						if page == "连接" {
+							a.connections = connections
+							a.groups = groups
+							a.connectionsError, a.proxiesError = connectionsError, proxiesError
+						}
+						if !paused {
+							a.appendLogs(logs)
+						}
+					})
+				}()
+			})
+		}
+	}
+}
+
+func pendingMessage(method string) string {
+	switch method {
+	case "config.apply":
+		return "正在应用配置"
+	case "config.restore":
+		return "正在恢复配置"
+	case "config.preview":
+		return "正在生成配置预览"
+	case "profile.save", "override.save":
+		return "正在保存配置"
+	case "kernel.download":
+		return "正在下载内核"
+	case "core.start", "core.restart":
+		return "正在启动内核"
+	case "core.stop":
+		return "正在停止内核"
+	}
+	return "正在处理请求"
+}
+
+func (a *App) busyText() string {
+	text := a.message
+	if !a.operationStarted.IsZero() {
+		text += fmt.Sprintf(" · 已用 %d 秒", int(time.Since(a.operationStarted).Seconds()))
+	}
+	return text
+}
+func (a *App) loadPreview() {
+	if a.current() == nil {
+		return
+	}
+	a.request("config.preview", a.draftParams(), "配置预览已生成", func(raw json.RawMessage) {
+		_ = json.Unmarshal(raw, &a.preview)
+		a.final.Buffer.Reset(a.preview.YAML)
+		a.field = 0
+	})
+}
+func (a *App) draftParams() map[string]string {
+	return map[string]string{
+		"id":       a.selected,
+		"content":  a.source.Buffer.String(),
+		"global":   a.global.Buffer.String(),
+		"override": a.override.Buffer.String(),
+	}
+}
+func (a *App) saveSource() {
+	p := *a.current()
+	p.Content = a.source.Buffer.String()
+	a.request("profile.save", map[string]any{"profile": p}, "本地配置已保存，运行配置保持不变", func(_ json.RawMessage) {
+		a.source.Buffer.MarkSaved()
+		a.savedSource = p.Content
+		a.accept(a.snapshot, false)
+	})
+}
+func (a *App) saveOverride() {
+	id := ""
+	text := a.global.Buffer.String()
+	target := a.global
+	if a.scope == 1 {
+		id = a.selected
+		text = a.override.Buffer.String()
+		target = a.override
+	}
+	a.request("override.save", map[string]any{"id": id, "text": text}, "覆盖配置已保存，运行配置保持不变", func(_ json.RawMessage) {
+		target.Buffer.MarkSaved()
+		if id == "" {
+			a.savedGlobal = text
+		} else {
+			a.savedOverride = text
+		}
+		a.accept(a.snapshot, false)
+	})
+}
+func (a *App) apply() {
+	if a.dirty() {
+		a.problem = "请先保存或撤销编辑，再应用配置"
+		return
+	}
+	a.request("config.apply", map[string]string{"id": a.selected}, "配置已应用", func(_ json.RawMessage) { a.loadPreview() })
+}
+func (a *App) openDirectory() {
+	if a.snapshot.Status.KernelDirectory == "" {
+		a.problem = "请先连接后台服务"
+		return
+	}
+	path := a.snapshot.Status.KernelDirectory
+	go func() {
+		if err := mygo.Shell.OpenPath(path); err != nil {
+			a.win.Update(func() { a.problem = err.Error() })
+		}
+	}()
+}
+func (a *App) exportLogs() {
+	lines := make([]string, 0, len(a.logs))
+	for _, l := range a.logs {
+		lines = append(lines, fmt.Sprintf("%s [%s] [%s] %s", l.Time.Format(time.RFC3339), l.Level, l.Source, l.Message))
+	}
+	go func() {
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: a.win, Title: "导出日志", DefaultPath: "nativejet.log"})
+		if err == nil && path != "" {
+			err = os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
+		}
+		if err != nil {
+			a.win.Update(func() { a.problem = err.Error() })
+		}
+	}()
+}
+func short(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+func value(v any) string {
+	b, _ := json.Marshal(v)
+	s := string(b)
+	if text, ok := v.(string); ok {
+		s = text
+	}
+	if len([]rune(s)) > 100 {
+		s = string([]rune(s)[:97]) + "…"
+	}
+	return s
+}
+func check(err error) error {
+	if err != nil {
+		return err
+	}
+	return errors.New("未选择文件")
+}
+func mygoContext() context.Context                { return context.Background() }
+func writePrivate(path string, data []byte) error { return os.WriteFile(path, data, 0600) }
