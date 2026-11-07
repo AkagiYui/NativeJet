@@ -21,6 +21,7 @@ var (
 	configIcon   = outlineIcon(`<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M8 12h8m-8 4h6"/>`)
 	proxiesIcon  = outlineIcon(`<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>`)
 	linkIcon     = outlineIcon(`<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-6 4v-4h12v4"/>`)
+	metricsIcon  = outlineIcon(`<path d="M3 12h4l3-7 4 14 3-7h4"/>`)
 	logIcon      = outlineIcon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>`)
 	serviceIcon  = outlineIcon(`<path d="M12 2.5 20 6v5c0 5-3 8-8 10.5C7 19 4 16 4 11V6zM8.5 12l2.5 2.5 4.5-5"/>`)
 	settingsIcon = outlineIcon(`<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4"/>`)
@@ -50,6 +51,8 @@ func (a *App) view(c *ui.Context) {
 					a.proxiesView(c)
 				case "连接":
 					a.connectionsView(c)
+				case metricsPage:
+					a.metricsView(c)
 				case "日志":
 					a.logsView(c)
 				case settingsPage:
@@ -84,6 +87,7 @@ func (a *App) sidebar(c *ui.Context) {
 			a.navItem(c, kernelIcon, "内核")
 			a.navItem(c, proxiesIcon, proxiesPage)
 			a.navItem(c, linkIcon, "连接")
+			a.navItem(c, metricsIcon, metricsPage)
 			a.navItem(c, logIcon, "日志")
 			ui.Box(c).Grow(1)
 			sectionLabel(c, "系统")

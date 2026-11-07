@@ -60,6 +60,11 @@ type App struct {
 	preview                                 model.Preview
 	connections                             model.Connections
 	connectionsError, proxiesError          error
+	metricsTab                              int
+	metrics                                 *metricsResult
+	nodeMetricsTable, ruleMetricsTable      metricTableState
+	providerMetricsTable                    metricTableState
+	connectionSort, kernelSort, logSort     ui.SortOrder
 	connectionIndex                         int
 	connectionRows                          ui.ListState
 	kernelRows                              ui.ListState
@@ -134,8 +139,11 @@ func New(o Options) (*App, error) {
 	}
 	a.fields.Selected = &a.field
 	a.connectionRows.Selected = &a.connectionIndex
+	a.connectionRows.Sort = &a.connectionSort
 	a.kernelRows.Selected = &a.kernelSelection
+	a.kernelRows.Sort = &a.kernelSort
 	a.logRows.Selected = &a.logSelection
+	a.logRows.Sort = &a.logSort
 	a.logDetail = newEditor("日志完整内容", true)
 	a.logDetail.Buffer.SetLanguage(nil)
 	a.logDetail.LineNumbers = editor.LineNumbersOff
@@ -215,6 +223,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.connections = model.Connections{}
 		a.groups = nil
 		a.connectionsError, a.proxiesError = nil, nil
+		a.metrics = nil
 	}
 	oldGlobal := a.snapshot.State.GlobalOverrideByID(a.loadedGlobal)
 	a.snapshot = snap
@@ -398,6 +407,7 @@ func (a *App) poll(ctx context.Context) {
 						}
 						defer a.updateTray()
 						if err != nil {
+							a.metrics = nil
 							if a.connected {
 								a.connected = false
 								a.problem = err.Error()

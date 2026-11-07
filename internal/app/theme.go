@@ -65,7 +65,15 @@ func workspaceTable(c *ui.Context, state *ui.ListState, columns []ui.TableColumn
 	t := *c.Theme()
 	t.Accent, t.AccentText, t.SurfacePressed = p.rowSelection, t.Text, p.active
 	t.Border = p.line
-	ui.Themed(c, &t).Grow(1).FillWidth().MinWidth(0).MinHeight(0).Children(func() {
+	table := ui.Themed(c, &t).Grow(1).FillWidth().MinWidth(0).MinHeight(0)
+	if state != nil && state.Sort != nil {
+		order := ui.Local(table, "table-sort", func() ui.SortOrder { return *state.Sort })
+		if *order != *state.Sort {
+			*order = *state.Sort
+			state.ScrollTo(0, ui.Start)
+		}
+	}
+	table.Children(func() {
 		ui.Table(c, state, columns, n, cell).Fill().Label(label)
 	})
 }

@@ -110,15 +110,6 @@ func (c Controller) request(ctx context.Context, pid int, method, path string, b
 }
 
 func (s *Supervisor) Call(ctx context.Context, method, path string, payload any) ([]byte, error) {
-	s.mu.Lock()
-	controller, record := s.controller, s.record
-	s.mu.Unlock()
-	if record == nil {
-		return nil, errors.New("内核未运行")
-	}
-	if record.ControllerOccupied {
-		return nil, errors.New("配置的控制端口在启动内核前已被占用")
-	}
 	var body io.Reader
 	if payload != nil {
 		b, err := json.Marshal(payload)
@@ -127,7 +118,7 @@ func (s *Supervisor) Call(ctx context.Context, method, path string, payload any)
 		}
 		body = bytes.NewReader(b)
 	}
-	resp, err := controller.request(ctx, record.PID, method, path, body)
+	resp, err := s.openController(ctx, method, path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -140,4 +131,17 @@ func (s *Supervisor) Call(ctx context.Context, method, path string, payload any)
 		return nil, fmt.Errorf("内核 API %s: %s", resp.Status, strings.TrimSpace(string(data)))
 	}
 	return data, nil
+}
+
+func (s *Supervisor) openController(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	s.mu.Lock()
+	controller, record := s.controller, s.record
+	s.mu.Unlock()
+	if record == nil {
+		return nil, errors.New("内核未运行")
+	}
+	if record.ControllerOccupied {
+		return nil, errors.New("配置的控制端口在启动内核前已被占用")
+	}
+	return controller.request(ctx, record.PID, method, path, body)
 }

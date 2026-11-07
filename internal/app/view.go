@@ -218,6 +218,23 @@ func (a *App) finalView(c *ui.Context) {
 
 var kernelVersionPattern = regexp.MustCompile(`(?i)^(?:mihomo(?: meta)?|clash\.meta)\s+((?:v?\d+\.\d+|alpha-)\S*)`)
 
+func kernelVersionLabel(version string) string {
+	if match := kernelVersionPattern.FindStringSubmatch(version); match != nil {
+		return match[1]
+	}
+	return version
+}
+
+func kernelStateLabel(k model.Kernel, selected string) string {
+	if k.Error != "" {
+		return "无法使用"
+	}
+	if k.ID == selected {
+		return "当前选用"
+	}
+	return "可用"
+}
+
 func (a *App) kernelView(c *ui.Context) {
 	workspaceHeader(c, kernelIcon, "内核", func() {
 		if action(c, folderIcon, "打开目录", false).Disabled(!a.connected).Clicked() {
@@ -249,22 +266,28 @@ func (a *App) kernelView(c *ui.Context) {
 	}
 
 	ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-		kernels := a.snapshot.Kernels
 		columns := []ui.TableColumn{
 			{Title: "文件名"},
 			{Title: "版本号", Width: 132},
 			{Title: "架构", Width: 75},
 			{Title: "状态", Width: 100},
 		}
+		selectedKernel := a.snapshot.State.SelectedKernel
+		kernels := sortableTableRows(a.snapshot.Kernels, columns, a.kernelSort, func(k model.Kernel, column int) tableSortKey {
+			return kernelSortKey(k, column, selectedKernel)
+		})
+		followTableSelection(&a.kernelRows, kernels, func(k model.Kernel) string {
+			if k.Path != "" {
+				return k.Path
+			}
+			return k.ID + "\x00" + k.Name
+		})
 		workspaceTable(c, &a.kernelRows, columns, len(kernels), "识别到的内核", func(row, col int) {
 			k := kernels[row]
 			text := k.Name
 			switch col {
 			case 1:
-				text = k.Version
-				if match := kernelVersionPattern.FindStringSubmatch(k.Version); match != nil {
-					text = match[1]
-				}
+				text = kernelVersionLabel(k.Version)
 				if text == "" {
 					text = "—"
 				}
@@ -273,12 +296,7 @@ func (a *App) kernelView(c *ui.Context) {
 			case 2:
 				text = k.Arch
 			case 3:
-				text = "可用"
-				if k.Error != "" {
-					text = "无法使用"
-				} else if k.ID == a.snapshot.State.SelectedKernel {
-					text = "当前选用"
-				}
+				text = kernelStateLabel(k, selectedKernel)
 			}
 			ui.Text(c, text).FontSize(12).SingleLine().Tooltip(text)
 		})
@@ -351,17 +369,15 @@ func (a *App) connectionsView(c *ui.Context) {
 		return
 	}
 	ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-		a.connectionRows.Key = func(row int) any { return rows[row].ID }
 		columns := []ui.TableColumn{{Title: "目标", MinWidth: 105}, {Title: "进程", MinWidth: 68}, {Title: "策略", MinWidth: 80}, {Title: "下载", Width: 86, Align: ui.End}}
+		rows := sortableTableRows(rows, columns, a.connectionSort, connectionSortKey)
+		followTableSelection(&a.connectionRows, rows, func(conn model.Connection) string { return conn.ID })
 		workspaceTable(c, &a.connectionRows, columns, len(rows), "活动连接列表", func(row, col int) {
 			conn := rows[row]
 			text := connectionHost(conn)
 			switch col {
 			case 1:
-				text = conn.Metadata.Process
-				if text == "" && conn.Metadata.ProcessPath != "" {
-					text = filepath.Base(conn.Metadata.ProcessPath)
-				}
+				text = connectionProcess(conn)
 			case 2:
 				text = strings.Join(conn.Chains, " → ")
 			case 3:
@@ -403,6 +419,16 @@ func connectionHost(conn model.Connection) string {
 	return conn.Metadata.DestinationIP
 }
 
+func connectionProcess(conn model.Connection) string {
+	if conn.Metadata.Process != "" {
+		return conn.Metadata.Process
+	}
+	if conn.Metadata.ProcessPath != "" {
+		return filepath.Base(conn.Metadata.ProcessPath)
+	}
+	return ""
+}
+
 func (a *App) logsView(c *ui.Context) {
 	workspaceHeader(c, logIcon, "日志", func() {
 		label := "暂停显示"
@@ -427,9 +453,6 @@ func (a *App) logsView(c *ui.Context) {
 			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0).
 			Tooltip("最多保留 2000 条，暂停只停止拉取。")
 	})
-	if a.logSelected != 0 {
-		a.logSelection = slices.IndexFunc(rows, func(l model.Log) bool { return l.Sequence == a.logSelected })
-	}
 	if len(rows) == 0 {
 		if len(a.logs) == 0 {
 			emptyState(c, logIcon, "暂无日志", "内核日志和启动输出会显示在这里。", nil)
@@ -439,6 +462,10 @@ func (a *App) logsView(c *ui.Context) {
 	} else {
 		ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			columns := []ui.TableColumn{{Title: "时间", Width: 82}, {Title: "级别", Width: 75}, {Title: "来源", Width: 84}, {Title: "内容", MinWidth: 105}}
+			rows := sortableTableRows(rows, columns, a.logSort, logSortKey)
+			if a.logSelected != 0 {
+				a.logSelection = slices.IndexFunc(rows, func(l model.Log) bool { return l.Sequence == a.logSelected })
+			}
 			workspaceTable(c, &a.logRows, columns, len(rows), "日志列表", func(row, col int) {
 				l := rows[row]
 				_, message := logging.Parse(l.Message)

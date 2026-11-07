@@ -14,15 +14,6 @@ func (a *App) trafficPanel(c *ui.Context) {
 	p := palette(c)
 	rates := a.trafficLabels()
 	sample := a.currentTraffic()
-	now := time.Now()
-	start := now.Add(-model.TrafficHistoryWindow)
-	var points []model.TrafficPoint
-	if a.trafficClient == a.client {
-		points = a.trafficHistory
-		for len(points) > 0 && points[0].At.Before(start) {
-			points = points[1:]
-		}
-	}
 	ui.Column(c.Key("traffic-panel")).FillWidth().Shrink(0).Padding(10, 12, 12).Gap(7).
 		BorderWidth(1, 0, 0, 0).BorderColor(p.line).Role(ui.RoleGroup).Label("内核流量速率").Children(func() {
 		ui.Text(c, "流量速率").FontSize(12).FontWeight(600)
@@ -46,15 +37,24 @@ func (a *App) trafficPanel(c *ui.Context) {
 					Label("累计" + direction.name + "：" + total).Tooltip(total)
 			}
 		})
-		trafficPlot(c.Key("traffic-plot"), points, start, now)
+		a.trafficChart(c.Key("traffic-plot"), 57)
 	})
 }
 
-func trafficPlot(c *ui.Context, points []model.TrafficPoint, start, end time.Time) {
+func (a *App) trafficChart(c *ui.Context, height float32) {
+	now := time.Now()
+	var points []model.TrafficPoint
+	if a.trafficClient == a.client {
+		points = a.trafficHistory
+	}
+	trafficPlot(c, points, now.Add(-model.TrafficHistoryWindow), now, height)
+}
+
+func trafficPlot(c *ui.Context, points []model.TrafficPoint, start, end time.Time, height float32) {
 	p := palette(c)
 	var peak int64
 	for _, point := range points {
-		if !point.At.After(end) {
+		if !point.At.Before(start) && !point.At.After(end) {
 			peak = max(peak, point.Up, point.Down)
 		}
 	}
@@ -129,5 +129,5 @@ func trafficPlot(c *ui.Context, points []model.TrafficPoint, start, end time.Tim
 				})
 			}).Translate(0, -4).PassThrough()
 		}
-	}).FillWidth().Height(57).Label("最近 5 分钟的上传和下载速率")
+	}).FillWidth().Height(height).Label("最近 5 分钟的上传和下载速率")
 }

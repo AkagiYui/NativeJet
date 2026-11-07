@@ -102,6 +102,18 @@ func fixtureCore() {
 			<-r.Context().Done()
 		case "/connections":
 			_ = json.NewEncoder(w).Encode(model.Connections{Connections: []model.Connection{}})
+		case "/memory":
+			fmt.Fprintln(w, `{"inuse":0,"oslimit":0}`)
+			w.(http.Flusher).Flush()
+			fmt.Fprintln(w, `{"inuse":22020096,"oslimit":0}`)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+		case "/proxies":
+			fmt.Fprintln(w, `{"proxies":{"configured":{"type":"Shadowsocks","history":[{"delay":81}]}}}`)
+		case "/providers/proxies":
+			fmt.Fprintln(w, `{"providers":{"subscription":{"testUrl":"https://example.com","proxies":[{"name":"provided","history":[{"delay":72}],"extra":{"https://example.com":{"alive":false,"history":[{"delay":0}]}}}],"subscriptionInfo":{"Upload":100,"Download":200,"Total":800}}}}`)
+		case "/rules":
+			fmt.Fprintln(w, `{"rules":[{"type":"DOMAIN","extra":{"hitCount":8,"missCount":2}},{"type":"MATCH"}]}`)
 		default:
 			http.NotFound(w, r)
 		}

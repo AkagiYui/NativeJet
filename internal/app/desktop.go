@@ -74,6 +74,7 @@ func (a *App) Start() {
 	a.connect(ctx)
 	go a.poll(ctx)
 	go a.pollTraffic(ctx)
+	go a.pollMetrics(ctx)
 }
 
 func (a *App) toggleCore() {
