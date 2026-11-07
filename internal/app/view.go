@@ -315,43 +315,12 @@ func (a *App) connectionsView(c *ui.Context) {
 			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
 		}
 	})
-	commandRow(c, func() {
-		ui.Tabs(c, &a.connectionTab, "活动连接", "策略组")
-	})
 	if !a.snapshot.Status.Running {
-		emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接和策略组。", nil)
+		emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接。", nil)
 		return
 	}
-	problem := a.connectionsError
-	if a.connectionTab == 1 {
-		problem = a.proxiesError
-	}
-	if problem != nil {
+	if problem := a.connectionsError; problem != nil {
 		emptyState(c, linkIcon, "无法读取 Mihomo 控制接口", problem.Error(), nil)
-		return
-	}
-	if a.connectionTab == 1 {
-		if len(a.groups) == 0 {
-			emptyState(c, linkIcon, "暂无策略组", "等待从内核读取策略组。", nil)
-			return
-		}
-		ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).PaddingEnd(12).ScrollbarInsets(0, 3, 0, 0).Children(func() {
-			ui.Column(c).FillWidth().Children(func() {
-				for _, g := range a.groups {
-					ui.Row(c.Key(g.Name)).FillWidth().Gap(14).AlignItems(ui.Center).Padding(10, 16).
-						BorderWidth(0, 0, 1, 0).BorderColor(palette(c).line).Children(func() {
-						ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-							ui.Text(c, g.Name).FontWeight(600).SingleLine().Tooltip(g.Name)
-							muted(c, g.Type)
-						})
-						selected := g.Now
-						if ui.Select(c, &selected, g.All).Width(240).Label(g.Name).Disabled(a.busy || g.Type != "Selector").Changed() {
-							a.request("proxies.select", map[string]string{"id": g.Name, "name": selected}, "策略组已更新", nil)
-						}
-					})
-				}
-			})
-		})
 		return
 	}
 	commandRow(c, func() {

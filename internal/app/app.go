@@ -57,7 +57,6 @@ type App struct {
 	logSelection                            int
 	logSelected, logDetailSequence          uint64
 	logDetail                               *editor.State
-	connectionTab                           int
 	groups                                  []model.Proxy
 	logs                                    []model.Log
 	logAfter                                uint64
@@ -332,9 +331,13 @@ func (a *App) poll(ctx context.Context) {
 					var logs []model.Log
 					var groups []model.Proxy
 					var connectionsError, proxiesError error
-					if err == nil && snap.Status.Running && page == "连接" {
-						connectionsError = client.Call(probe, "connections", nil, &connections)
-						proxiesError = client.Call(probe, "proxies", nil, &groups)
+					if err == nil && snap.Status.Running {
+						switch page {
+						case "连接":
+							connectionsError = client.Call(probe, "connections", nil, &connections)
+						case proxiesPage:
+							proxiesError = client.Call(probe, "proxies", nil, &groups)
+						}
 					}
 					if err == nil && !paused {
 						_ = client.Call(probe, "logs", map[string]any{"after": after}, &logs)
@@ -350,10 +353,13 @@ func (a *App) poll(ctx context.Context) {
 							return
 						}
 						a.accept(snap, false)
-						if page == "连接" {
+						switch page {
+						case "连接":
 							a.connections = connections
+							a.connectionsError = connectionsError
+						case proxiesPage:
 							a.groups = groups
-							a.connectionsError, a.proxiesError = connectionsError, proxiesError
+							a.proxiesError = proxiesError
 						}
 						if !paused {
 							a.appendLogs(logs)
@@ -381,6 +387,8 @@ func pendingMessage(method string) string {
 		return "正在启动内核"
 	case "core.stop":
 		return "正在停止内核"
+	case "proxies.select":
+		return "正在切换策略"
 	}
 	return "正在处理请求"
 }

@@ -109,7 +109,7 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		}
 		for _, page := range []struct {
 			name, content string
-		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {"连接", "活动连接列表"}, {"日志", "日志列表"}, {"后台服务", ""}} {
+		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {proxiesPage, ""}, {"连接", "活动连接列表"}, {"日志", "日志列表"}, {"后台服务", ""}} {
 			a.page, a.tab, a.format = page.name, 2, 0
 			tester.Frame()
 			if got := bounds("应用状态栏"); got != bar {
