@@ -13,18 +13,30 @@ type trafficLabels struct {
 	up, down string
 }
 
+func (a *App) currentTraffic() model.Traffic {
+	if !a.coreRunning() || a.trafficClient != a.client {
+		return model.Traffic{}
+	}
+	return a.traffic
+}
+
 func (a *App) trafficLabels() trafficLabels {
-	if !a.coreRunning() || a.trafficClient != a.client || !a.traffic.Available {
+	sample := a.currentTraffic()
+	if !sample.Available {
 		return trafficLabels{up: "—", down: "—"}
 	}
-	return trafficLabels{up: trafficRate(a.traffic.Up), down: trafficRate(a.traffic.Down)}
+	return trafficLabels{up: trafficRate(sample.Up), down: trafficRate(sample.Down)}
 }
 
 func trafficRate(bytesPerSecond int64) string {
-	if bytesPerSecond == 0 {
-		return "0 B/s"
+	return trafficBytes(bytesPerSecond) + "/s"
+}
+
+func trafficBytes(n int64) string {
+	if n == 0 {
+		return "0 B"
 	}
-	return bytesString(bytesPerSecond) + "/s"
+	return bytesString(n)
 }
 
 // Both surfaces share a live reading. Only a visible window needs the history.

@@ -13,6 +13,7 @@ import (
 func (a *App) trafficPanel(c *ui.Context) {
 	p := palette(c)
 	rates := a.trafficLabels()
+	sample := a.currentTraffic()
 	now := time.Now()
 	start := now.Add(-model.TrafficHistoryWindow)
 	var points []model.TrafficPoint
@@ -25,16 +26,24 @@ func (a *App) trafficPanel(c *ui.Context) {
 	ui.Column(c.Key("traffic-panel")).FillWidth().Shrink(0).Padding(10, 12, 12).Gap(7).
 		BorderWidth(1, 0, 0, 0).BorderColor(p.line).Role(ui.RoleGroup).Label("内核流量速率").Children(func() {
 		ui.Text(c, "流量速率").FontSize(12).FontWeight(600)
-		ui.Row(c).FillWidth().Gap(8).Children(func() {
-			for _, rate := range [...]struct {
-				name, value string
-				color       ui.Color
-			}{{"上传", rates.up, p.Accent}, {"下载", rates.down, p.Success}} {
-				ui.Column(c).Basis(0).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					stateLabel(c, rate.name, rate.color)
-					ui.Text(c, rate.value).FontSize(12).FontWeight(600).SingleLine().
-						Label(rate.name + "速度：" + rate.value).Tooltip(rate.value)
-				})
+		ui.Grid(c).FillWidth().ColumnTracks(ui.Fixed(38), ui.Fr(1), ui.Fr(1)).GapX(8).GapY(4).Children(func() {
+			ui.Box(c)
+			ui.Text(c, "实时速率").FontSize(10).TextColor(p.TextMuted).SingleLine()
+			ui.Text(c, "本次累计").FontSize(10).TextColor(p.TextMuted).SingleLine().Tooltip("当前内核进程的累计流量")
+			for _, direction := range [...]struct {
+				name, rate string
+				total      int64
+				color      ui.Color
+			}{{"上传", rates.up, sample.UpTotal, p.Accent}, {"下载", rates.down, sample.DownTotal, p.Success}} {
+				total := "—"
+				if sample.TotalsAvailable {
+					total = trafficBytes(direction.total)
+				}
+				stateLabel(c, direction.name, direction.color)
+				ui.Text(c, direction.rate).FontSize(11).FontWeight(600).SingleLine().
+					Label(direction.name + "速度：" + direction.rate).Tooltip(direction.rate)
+				ui.Text(c, total).FontSize(11).SingleLine().
+					Label("累计" + direction.name + "：" + total).Tooltip(total)
 			}
 		})
 		trafficPlot(c.Key("traffic-plot"), points, start, now)

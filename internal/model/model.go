@@ -173,11 +173,14 @@ type Connection struct {
 	RulePayload string   `json:"rulePayload"`
 }
 
-// Traffic is the latest aggregate byte rate from the running core.
+// Traffic holds the running core's latest byte rates and cumulative counts.
 type Traffic struct {
-	Available bool  `json:"available"`
-	Up        int64 `json:"up"`
-	Down      int64 `json:"down"`
+	Available       bool  `json:"available"`
+	Up              int64 `json:"up"`
+	Down            int64 `json:"down"`
+	TotalsAvailable bool  `json:"totalsAvailable"`
+	UpTotal         int64 `json:"upTotal"`
+	DownTotal       int64 `json:"downTotal"`
 }
 
 const TrafficHistoryWindow = 5 * time.Minute

@@ -73,7 +73,10 @@ func TestTrafficDisconnectReconnectAndIdle(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	wait(model.Traffic{Available: true, Up: 1024, Down: 2048}, 3*time.Second)
+	wait(model.Traffic{
+		Available: true, Up: 1024, Down: 2048,
+		TotalsAvailable: true, UpTotal: 222222, DownTotal: 999999,
+	}, 3*time.Second)
 	close(disconnect)
 	wait(model.Traffic{}, 2*time.Second)
 	wait(model.Traffic{Available: true}, 3*time.Second)

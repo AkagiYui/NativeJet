@@ -97,19 +97,26 @@ func (s *Supervisor) readTraffic(ctx context.Context, controller Controller, rec
 	first := true
 	for sc.Scan() {
 		var frame struct {
-			Up   *int64 `json:"up"`
-			Down *int64 `json:"down"`
+			Up        *int64 `json:"up"`
+			Down      *int64 `json:"down"`
+			UpTotal   *int64 `json:"upTotal"`
+			DownTotal *int64 `json:"downTotal"`
 		}
 		if json.Unmarshal(sc.Bytes(), &frame) != nil ||
 			frame.Up == nil || frame.Down == nil || *frame.Up < 0 || *frame.Down < 0 {
 			continue
+		}
+		sample := model.Traffic{Available: true, Up: *frame.Up, Down: *frame.Down}
+		if frame.UpTotal != nil && frame.DownTotal != nil && *frame.UpTotal >= 0 && *frame.DownTotal >= 0 {
+			sample.TotalsAvailable = true
+			sample.UpTotal, sample.DownTotal = *frame.UpTotal, *frame.DownTotal
 		}
 		s.mu.Lock()
 		if ctx.Err() != nil || s.record != record {
 			s.mu.Unlock()
 			return
 		}
-		s.traffic = model.Traffic{Available: true, Up: *frame.Up, Down: *frame.Down}
+		s.traffic = sample
 		s.trafficLog.add(model.TrafficPoint{
 			At: time.Now(), Up: *frame.Up, Down: *frame.Down, BreakBefore: first,
 		})
