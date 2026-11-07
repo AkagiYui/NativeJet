@@ -108,11 +108,14 @@ func (a *App) updateTray() {
 		}
 		a.trayCoreItem.SetLabel(label)
 	}
-	a.updateMenuBarDisplay(menuBarDisplay{
+	display := menuBarDisplay{
 		running: running,
-		stacked: a.appearance.MenuBarSpeedLayout == menuBarSpeedStacked,
-		labels:  a.trafficLabels(),
-	})
+		layout:  a.appearance.MenuBarSpeedLayout,
+	}
+	if display.layout != menuBarSpeedOff {
+		display.labels = a.trafficLabels()
+	}
+	a.updateMenuBarDisplay(display)
 }
 
 func (a *App) showWindow() {

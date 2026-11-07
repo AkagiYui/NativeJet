@@ -15,12 +15,9 @@ import (
 )
 
 type menuBarDisplay struct {
-	running, stacked bool
-	labels           trafficLabels
-}
-
-func (d menuBarDisplay) title() string {
-	return "↑ " + d.labels.up + "  ↓ " + d.labels.down
+	running bool
+	layout  menuBarSpeedLayout
+	labels  trafficLabels
 }
 
 func (a *App) updateMenuBarDisplay(next menuBarDisplay) {
@@ -28,22 +25,28 @@ func (a *App) updateMenuBarDisplay(next menuBarDisplay) {
 	if next == prev {
 		return
 	}
-	title := next.title()
-	if next.stacked {
-		title = ""
+	stacked := next.layout == menuBarSpeedStacked
+	wasStacked := prev.layout == menuBarSpeedStacked
+	rates, title, tip := "", "", "NativeJet"
+	if next.layout != menuBarSpeedOff {
+		rates = "↑ " + next.labels.up + "  ↓ " + next.labels.down
+		tip += " · 内核实时流量\n" + rates
+		if !stacked {
+			title = rates
+		}
 	}
-	if next.running != prev.running || next.stacked != prev.stacked || next.stacked && next.labels != prev.labels {
+	if next.running != prev.running || stacked != wasStacked || stacked && next.labels != prev.labels {
 		icon := menuBarOutlineIcon
 		if next.running {
 			icon = menuBarIcon
 		}
-		if next.stacked {
+		if stacked {
 			stacked, err := stackedMenuBarIcon(icon, next.labels)
 			if err == nil {
 				icon = stacked
 			} else {
 				log.Printf("Could not draw the NativeJet menu bar rates: %v", err)
-				title = next.title()
+				title = rates
 			}
 		}
 		if err := a.tray.SetIcon(icon, true); err != nil {
@@ -52,7 +55,7 @@ func (a *App) updateMenuBarDisplay(next menuBarDisplay) {
 		}
 	}
 	a.tray.SetTitle(title)
-	a.tray.SetToolTip("NativeJet · 内核实时流量\n" + next.title())
+	a.tray.SetToolTip(tip)
 	a.trayDisplay = next
 }
 

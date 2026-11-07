@@ -36,7 +36,8 @@ func (a *App) loadAppearance() {
 	if prefs.Theme == mygo.ThemeLight || prefs.Theme == mygo.ThemeDark {
 		a.appearance.Theme = prefs.Theme
 	}
-	if prefs.MenuBarSpeedLayout == menuBarSpeedStacked {
+	switch prefs.MenuBarSpeedLayout {
+	case menuBarSpeedStacked, menuBarSpeedSideBySide, menuBarSpeedOff:
 		a.appearance.MenuBarSpeedLayout = prefs.MenuBarSpeedLayout
 	}
 }
