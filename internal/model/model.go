@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const ProtocolVersion = 1
 
@@ -17,6 +20,16 @@ type Profile struct {
 	ETag             string    `json:"etag,omitempty"`
 }
 
+type GlobalOverride struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+func DefaultGlobalOverride(content string) GlobalOverride {
+	return GlobalOverride{ID: "000000000000000000000000", Name: "默认", Content: content}
+}
+
 type Kernel struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -28,14 +41,16 @@ type Kernel struct {
 }
 
 type Revision struct {
-	ID              string    `json:"id"`
-	ProfileID       string    `json:"profileId"`
-	KernelID        string    `json:"kernelId"`
-	CreatedAt       time.Time `json:"createdAt"`
-	Hash            string    `json:"hash"`
-	Source          string    `json:"source"`
-	GlobalOverride  string    `json:"globalOverride"`
-	ProfileOverride string    `json:"profileOverride"`
+	ID                 string    `json:"id"`
+	ProfileID          string    `json:"profileId"`
+	KernelID           string    `json:"kernelId"`
+	CreatedAt          time.Time `json:"createdAt"`
+	Hash               string    `json:"hash"`
+	Source             string    `json:"source"`
+	GlobalOverride     string    `json:"globalOverride"`
+	GlobalOverrideID   string    `json:"globalOverrideId,omitempty"`
+	GlobalOverrideName string    `json:"globalOverrideName,omitempty"`
+	ProfileOverride    string    `json:"profileOverride"`
 }
 
 type ProcessRecord struct {
@@ -47,15 +62,43 @@ type ProcessRecord struct {
 }
 
 type State struct {
-	Version        int            `json:"version"`
-	Profiles       []Profile      `json:"profiles"`
-	GlobalOverride string         `json:"globalOverride"`
-	SelectedKernel string         `json:"selectedKernel"`
-	ActiveProfile  string         `json:"activeProfile"`
-	ActiveRevision string         `json:"activeRevision"`
-	Revisions      []Revision     `json:"revisions"`
-	Installed      []Kernel       `json:"installed"`
-	Process        *ProcessRecord `json:"process,omitempty"`
+	Version                int              `json:"version"`
+	Profiles               []Profile        `json:"profiles"`
+	GlobalOverrides        []GlobalOverride `json:"globalOverrides"`
+	SelectedGlobalOverride string           `json:"selectedGlobalOverride"`
+	SelectedKernel         string           `json:"selectedKernel"`
+	ActiveProfile          string           `json:"activeProfile"`
+	ActiveRevision         string           `json:"activeRevision"`
+	Revisions              []Revision       `json:"revisions"`
+	Installed              []Kernel         `json:"installed"`
+	Process                *ProcessRecord   `json:"process,omitempty"`
+}
+
+func (s *State) UnmarshalJSON(data []byte) error {
+	type state State
+	var wire struct {
+		state
+		LegacyOverride *string `json:"globalOverride"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*s = State(wire.state)
+	if s.GlobalOverrides == nil && s.SelectedGlobalOverride == "" && wire.LegacyOverride != nil {
+		preset := DefaultGlobalOverride(*wire.LegacyOverride)
+		s.GlobalOverrides = []GlobalOverride{preset}
+		s.SelectedGlobalOverride = preset.ID
+	}
+	return nil
+}
+
+func (s *State) GlobalOverrideByID(id string) *GlobalOverride {
+	for i := range s.GlobalOverrides {
+		if s.GlobalOverrides[i].ID == id {
+			return &s.GlobalOverrides[i]
+		}
+	}
+	return nil
 }
 
 type Trace struct {
@@ -94,6 +137,7 @@ type Status struct {
 	KernelAuthorized  bool     `json:"kernelAuthorized"`
 	ActiveTUN         bool     `json:"activeTun"`
 	AuthorizedKernels []string `json:"authorizedKernels,omitempty"`
+	GlobalOverrides   bool     `json:"globalOverrides,omitempty"`
 }
 
 type Snapshot struct {

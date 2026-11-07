@@ -37,6 +37,7 @@ type App struct {
 	trafficClient                           *ipc.Client
 	quitting                                bool
 	importing                               *importForm
+	globalNameWindow                        *mygo.Window
 	pendingImports                          []subscriptionLink
 	client                                  *ipc.Client
 	connecting                              *ipc.Client
@@ -51,6 +52,7 @@ type App struct {
 	operationStarted                        time.Time
 	message, problem                        string
 	page, selected, loaded                  string
+	loadedGlobal                            string
 	tab, scope, format, field               int
 	fields                                  ui.ListState
 	source, global, override, final         *editor.State
@@ -214,8 +216,21 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.groups = nil
 		a.connectionsError, a.proxiesError = nil, nil
 	}
+	oldGlobal := a.snapshot.State.GlobalOverrideByID(a.loadedGlobal)
 	a.snapshot = snap
 	a.snapshotVersion++
+	if !a.global.Buffer.Modified() {
+		if preset := snap.State.GlobalOverrideByID(snap.State.SelectedGlobalOverride); preset != nil {
+			if a.loadedGlobal != preset.ID || a.savedGlobal != preset.Content {
+				a.global.Buffer.Reset(preset.Content)
+				a.global.Buffer.MarkSaved()
+				a.loadedGlobal, a.savedGlobal = preset.ID, preset.Content
+				a.preview = model.Preview{}
+			} else if oldGlobal != nil && oldGlobal.Name != preset.Name {
+				a.preview = model.Preview{}
+			}
+		}
+	}
 	if a.selected == "" && len(snap.State.Profiles) > 0 {
 		a.selected = snap.State.Profiles[0].ID
 	}
@@ -228,9 +243,6 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.source.Buffer.Reset(p.Content)
 		a.source.Buffer.MarkSaved()
 		a.savedSource = p.Content
-		a.global.Buffer.Reset(snap.State.GlobalOverride)
-		a.global.Buffer.MarkSaved()
-		a.savedGlobal = snap.State.GlobalOverride
 		a.override.Buffer.Reset(p.Override)
 		a.override.Buffer.MarkSaved()
 		a.savedOverride = p.Override
@@ -242,10 +254,10 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 			a.source.Buffer.MarkSaved()
 			a.savedSource = p.Content
 		}
-		if !a.global.Buffer.Modified() && a.savedGlobal != snap.State.GlobalOverride {
-			a.global.Buffer.Reset(snap.State.GlobalOverride)
-			a.global.Buffer.MarkSaved()
-			a.savedGlobal = snap.State.GlobalOverride
+		if !a.override.Buffer.Modified() && a.savedOverride != p.Override {
+			a.override.Buffer.Reset(p.Override)
+			a.override.Buffer.MarkSaved()
+			a.savedOverride = p.Override
 		}
 	}
 	a.source.ReadOnly = p.Kind == "subscription" || a.busy
@@ -427,8 +439,12 @@ func pendingMessage(method string) string {
 		return "正在恢复配置"
 	case "config.preview":
 		return "正在生成配置预览"
-	case "profile.save", "override.save":
+	case "profile.save", "override.save", "globalOverride.save":
 		return "正在保存配置"
+	case "globalOverride.select":
+		return "正在切换全局覆盖"
+	case "globalOverride.delete":
+		return "正在删除全局覆盖"
 	case "kernel.download":
 		return "正在下载内核"
 	case "core.start", "core.restart":
@@ -460,10 +476,11 @@ func (a *App) loadPreview() {
 }
 func (a *App) draftParams() map[string]string {
 	return map[string]string{
-		"id":       a.selected,
-		"content":  a.source.Buffer.String(),
-		"global":   a.global.Buffer.String(),
-		"override": a.override.Buffer.String(),
+		"id":               a.selected,
+		"content":          a.source.Buffer.String(),
+		"global":           a.global.Buffer.String(),
+		"globalOverrideId": a.loadedGlobal,
+		"override":         a.override.Buffer.String(),
 	}
 }
 func (a *App) saveSource() {
@@ -476,22 +493,29 @@ func (a *App) saveSource() {
 	})
 }
 func (a *App) saveOverride() {
-	id := ""
-	text := a.global.Buffer.String()
-	target := a.global
 	if a.scope == 1 {
-		id = a.selected
-		text = a.override.Buffer.String()
-		target = a.override
-	}
-	a.request("override.save", map[string]any{"id": id, "text": text}, "覆盖配置已保存，运行配置保持不变", func(_ json.RawMessage) {
-		target.Buffer.MarkSaved()
-		if id == "" {
-			a.savedGlobal = text
-		} else {
+		text := a.override.Buffer.String()
+		a.request("override.save", map[string]string{"id": a.selected, "text": text}, "覆盖配置已保存，运行配置保持不变", func(_ json.RawMessage) {
+			a.override.Buffer.MarkSaved()
 			a.savedOverride = text
+			a.accept(a.snapshot, false)
+		})
+		return
+	}
+	text := a.global.Buffer.String()
+	method := "globalOverride.save"
+	params := map[string]string{"id": a.loadedGlobal, "content": text}
+	if !a.snapshot.Status.GlobalOverrides {
+		method = "override.save"
+		params = map[string]string{"text": text}
+	}
+	a.request(method, params, "全局覆盖已保存，点击“应用配置”后生效", func(_ json.RawMessage) {
+		a.global.Buffer.MarkSaved()
+		a.savedGlobal = text
+		// A successful save can precede the next successful snapshot poll.
+		if a.snapshot.State.SelectedGlobalOverride != a.loadedGlobal {
+			a.accept(a.snapshot, false)
 		}
-		a.accept(a.snapshot, false)
 	})
 }
 func (a *App) apply() {

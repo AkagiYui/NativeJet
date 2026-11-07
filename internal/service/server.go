@@ -221,7 +221,7 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Request) (any, error) {
 	var args struct {
 		ID       string        `json:"id"`
-		Name     string        `json:"name"`
+		Name     *string       `json:"name"`
 		URL      string        `json:"url"`
 		Text     string        `json:"text"`
 		Interval int           `json:"interval"`
@@ -231,6 +231,7 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		Profile  model.Profile `json:"profile"`
 		Content  *string       `json:"content"`
 		Global   *string       `json:"global"`
+		GlobalID string        `json:"globalOverrideId"`
 		Override *string       `json:"override"`
 		State    *model.State  `json:"state"`
 	}
@@ -261,13 +262,22 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 	case "profile.delete":
 		return nil, m.DeleteProfile(args.ID)
 	case "profile.subscribe":
-		return m.Subscribe(ctx, args.Name, args.URL, args.Interval)
+		if args.Name == nil {
+			return nil, errors.New("配置名称不能为空")
+		}
+		return m.Subscribe(ctx, *args.Name, args.URL, args.Interval)
 	case "profile.update":
 		return nil, m.UpdateSubscription(ctx, args.ID)
 	case "override.save":
 		return nil, m.SaveOverride(args.ID, args.Text)
+	case "globalOverride.save":
+		return nil, m.SaveGlobalOverride(args.ID, args.Name, args.Content)
+	case "globalOverride.select":
+		return nil, m.SelectGlobalOverride(args.ID)
+	case "globalOverride.delete":
+		return nil, m.DeleteGlobalOverride(args.ID)
 	case "config.preview":
-		return m.Preview(args.ID, args.Content, args.Global, args.Override)
+		return m.Preview(args.ID, args.GlobalID, args.Content, args.Global, args.Override)
 	case "config.apply":
 		return nil, m.Apply(ctx, args.ID)
 	case "config.restore":
@@ -357,10 +367,10 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		if err = json.Unmarshal(data, &proxy); err != nil {
 			return nil, err
 		}
-		if proxy.Type != "Selector" || !slices.Contains(proxy.All, args.Name) {
+		if proxy.Type != "Selector" || args.Name == nil || !slices.Contains(proxy.All, *args.Name) {
 			return nil, errors.New("该策略组不支持选择此节点")
 		}
-		_, err = m.Core(ctx, http.MethodPut, "/proxies/"+url.PathEscape(args.ID), map[string]string{"name": args.Name})
+		_, err = m.Core(ctx, http.MethodPut, "/proxies/"+url.PathEscape(args.ID), map[string]string{"name": *args.Name})
 		return nil, err
 	default:
 		return nil, fmt.Errorf("未知操作 %q", r.Method)

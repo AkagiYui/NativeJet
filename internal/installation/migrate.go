@@ -36,9 +36,17 @@ func ValidateState(state model.State) error {
 			}
 		}
 	}
-	if strings.TrimSpace(state.GlobalOverride) != "" {
-		if _, _, err := config.Parse(state.GlobalOverride); err != nil {
-			return err
+	if state.GlobalOverrideByID(state.SelectedGlobalOverride) == nil {
+		return errors.New("找不到选用的全局覆盖")
+	}
+	seen = map[string]bool{}
+	for _, preset := range state.GlobalOverrides {
+		if !validID(preset.ID) || seen[preset.ID] || strings.TrimSpace(preset.Name) == "" {
+			return errors.New("全局覆盖标识或名称无效")
+		}
+		seen[preset.ID] = true
+		if _, _, err := config.Parse(preset.Content); err != nil {
+			return fmt.Errorf("全局覆盖 %s 无法迁移: %w", preset.Name, err)
 		}
 	}
 	for _, k := range state.Installed {
@@ -148,7 +156,8 @@ func migrate(payload Payload, source *os.Root, target string) (model.State, erro
 			state.Revisions = append(state.Revisions, r)
 		}
 	}
-	state.GlobalOverride = incoming.GlobalOverride
+	state.GlobalOverrides = incoming.GlobalOverrides
+	state.SelectedGlobalOverride = incoming.SelectedGlobalOverride
 	state.SelectedKernel = incoming.SelectedKernel
 	state.Process = nil
 	if incoming.ActiveRevision != "" {

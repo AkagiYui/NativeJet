@@ -98,9 +98,12 @@ func (s *Store) Path(parts ...string) string {
 	return filepath.Join(append([]string{s.Directory}, parts...)...)
 }
 func (s *Store) Load() (model.State, error) {
-	state := model.State{Version: 1, GlobalOverride: DefaultOverride, Profiles: []model.Profile{}, Installed: []model.Kernel{}, Revisions: []model.Revision{}}
+	var state model.State
 	b, err := os.ReadFile(s.Path("state.json"))
 	if errors.Is(err, os.ErrNotExist) {
+		preset := model.DefaultGlobalOverride(DefaultOverride)
+		state = model.State{Version: 1, GlobalOverrides: []model.GlobalOverride{preset}, SelectedGlobalOverride: preset.ID,
+			Profiles: []model.Profile{}, Installed: []model.Kernel{}, Revisions: []model.Revision{}}
 		return state, nil
 	}
 	if err != nil {
@@ -111,6 +114,9 @@ func (s *Store) Load() (model.State, error) {
 	}
 	if state.Version != 1 {
 		return state, fmt.Errorf("不支持的数据版本 %d", state.Version)
+	}
+	if state.GlobalOverrideByID(state.SelectedGlobalOverride) == nil {
+		return state, errors.New("找不到选用的全局覆盖，已保留原文件")
 	}
 	return state, nil
 }

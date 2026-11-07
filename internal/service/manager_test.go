@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -269,7 +270,7 @@ func TestApplyRestartsCoreAndRollsBackOnProcessExit(t *testing.T) {
 	if values, err := m.revisionValues(applied.ActiveRevision); err != nil || values["mode"] != "global" {
 		t.Fatalf("the new revision was not saved: %v", err)
 	}
-	if _, err = m.Preview(p.ID, nil, nil, nil); err != nil {
+	if _, err = m.Preview(p.ID, "", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range m.Logs(0) {
@@ -289,6 +290,56 @@ func TestApplyRestartsCoreAndRollsBackOnProcessExit(t *testing.T) {
 	if !restored.Status.Running || restored.Status.PID == applied.PID || restored.State.ActiveRevision != applied.ActiveRevision ||
 		restored.State.Process == nil || restored.State.Process.RevisionID != applied.ActiveRevision || len(restored.State.Revisions) != 2 {
 		t.Fatal("the failed restart did not restore the previous revision")
+	}
+}
+
+func TestSwitchGlobalOverrideKeepsAppliedRevisionAndCanRestoreDeletedPreset(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	if err := m.SaveOverride("", "tun:\n  enable: false\nmixed-port: 7000\nallow-lan: false\n"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.SaveProfile(model.Profile{Name: "local", Kind: "local", Content: "mode: rule\n", Override: "mixed-port: 7890\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	first := m.Snapshot().State
+	name, content := "临时", "tun:\n  enable: false\nlog-level: debug\nmixed-port: 8000\n"
+	if err = m.SaveGlobalOverride("", &name, &content); err != nil {
+		t.Fatal(err)
+	}
+	second := m.Snapshot().State
+	if second.ActiveRevision != first.ActiveRevision || second.SelectedGlobalOverride == first.SelectedGlobalOverride {
+		t.Fatal("creating a selected preset changed the applied revision or failed to select it")
+	}
+	preview, err := m.Preview(p.ID, "", nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(preview.YAML, "log-level: debug") || !strings.Contains(preview.YAML, "mixed-port: 7890") || strings.Contains(preview.YAML, "allow-lan") {
+		t.Fatalf("preview merged an unselected override or changed precedence: %s", preview.YAML)
+	}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.DeleteGlobalOverride(first.SelectedGlobalOverride); err != nil {
+		t.Fatal(err)
+	}
+	if err = m.Restore(ctx, first.ActiveRevision); err != nil {
+		t.Fatal(err)
+	}
+	state, err := m.store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.GlobalOverrides) != 2 || state.GlobalOverrideByID(second.SelectedGlobalOverride).Content != content ||
+		state.SelectedGlobalOverride == second.SelectedGlobalOverride || state.Revisions[len(state.Revisions)-1].Hash != first.Revisions[0].Hash {
+		t.Fatal("restoring the deleted preset lost the current preset or failed to restore the applied YAML")
 	}
 }
 
@@ -512,5 +563,33 @@ func TestIPCProtocolAndPersistence(t *testing.T) {
 	}
 	if len(snap.State.Profiles) != 1 || snap.State.Profiles[0].Content != "mode: rule\n" {
 		t.Fatal("saved local profile missing")
+	}
+	first := snap.State.SelectedGlobalOverride
+	call := func(method string, params, out any) {
+		t.Helper()
+		if err := client.Call(context.Background(), method, params, out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call("globalOverride.save", map[string]string{"name": "test", "content": "log-level: debug\n"}, nil)
+	call("snapshot", nil, &snap)
+	if !snap.Status.GlobalOverrides || len(snap.State.GlobalOverrides) != 2 || snap.State.SelectedGlobalOverride == first {
+		t.Fatal("new override was not added and selected through IPC")
+	}
+	second := snap.State.SelectedGlobalOverride
+	call("globalOverride.save", map[string]string{"id": second, "name": "renamed"}, nil)
+	call("globalOverride.select", map[string]string{"id": first}, nil)
+	var preview model.Preview
+	call("config.preview", map[string]string{"id": p.ID, "globalOverrideId": second}, &preview)
+	if !slices.ContainsFunc(preview.Fields, func(f model.Field) bool {
+		return f.Path == "log-level" && f.Value == "debug" && f.Source == "全局覆盖 · renamed"
+	}) {
+		t.Fatal("preview did not identify the requested override")
+	}
+	call("globalOverride.select", map[string]string{"id": second}, nil)
+	call("globalOverride.delete", map[string]string{"id": second}, nil)
+	call("snapshot", nil, &snap)
+	if len(snap.State.GlobalOverrides) != 1 || snap.State.SelectedGlobalOverride != first {
+		t.Fatal("deleting the selected override did not select the remaining override")
 	}
 }

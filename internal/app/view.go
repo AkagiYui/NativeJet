@@ -16,15 +16,6 @@ import (
 )
 
 func (a *App) configView(c *ui.Context) {
-	if len(a.snapshot.State.Profiles) == 0 {
-		workspaceHeader(c, configIcon, "配置", nil)
-		emptyState(c, configIcon, "添加第一份配置", "导入订阅地址、YAML 文件，或直接粘贴内容。", func() {
-			if action(c, plusIcon, "添加配置", true).Disabled(a.busy || !a.connected).Clicked() {
-				a.addConfig()
-			}
-		})
-		return
-	}
 	workspaceHeader(c, configIcon, "配置", func() {
 		if action(c, plusIcon, "添加配置", false).Disabled(a.busy || !a.connected).Clicked() {
 			a.addConfig()
@@ -37,6 +28,40 @@ func (a *App) configView(c *ui.Context) {
 			a.apply()
 		}
 	})
+	if len(a.snapshot.State.Profiles) > 0 {
+		a.profileRow(c)
+	}
+	commandRow(c, func() {
+		if ui.Tabs(c, &a.tab, "原始配置", "覆盖配置", "最终配置").Changed() && a.tab == 2 {
+			a.loadPreview()
+		}
+		ui.Box(c).Grow(1)
+		caption := "尚未应用配置"
+		if id := a.snapshot.State.ActiveRevision; id != "" {
+			caption = "已应用版本 " + short(id)
+			for _, r := range a.snapshot.State.Revisions {
+				if r.ID == id && r.GlobalOverrideName != "" {
+					caption += " · " + r.GlobalOverrideName
+					break
+				}
+			}
+		}
+		if a.dirty() {
+			caption += " · 有未保存的修改"
+		}
+		ui.Text(c, caption).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Tooltip(caption)
+	})
+	switch a.tab {
+	case 0:
+		a.sourceView(c)
+	case 1:
+		a.overrideView(c)
+	case 2:
+		a.finalView(c)
+	}
+}
+
+func (a *App) profileRow(c *ui.Context) {
 	commandRow(c, func() {
 		labels := []string{}
 		current := ""
@@ -53,7 +78,7 @@ func (a *App) configView(c *ui.Context) {
 				current = text
 			}
 		}
-		if ui.Select(c, &current, labels).Label("正在查看的配置").Grow(1).Changed() {
+		if ui.Select(c, &current, labels).Label("正在查看的配置").Grow(1).Disabled(a.busy).Changed() && !a.busy {
 			if a.dirty() {
 				a.problem = "请先保存或撤销编辑，再切换配置"
 			} else {
@@ -81,87 +106,50 @@ func (a *App) configView(c *ui.Context) {
 			}
 		}
 	})
+}
+
+func (a *App) sourceView(c *ui.Context) {
+	p := a.current()
+	if p == nil {
+		emptyState(c, configIcon, "添加第一份配置", "导入订阅地址、YAML 文件，或直接粘贴内容。", func() {
+			if action(c, plusIcon, "添加配置", true).Disabled(a.busy || !a.connected).Clicked() {
+				a.addConfig()
+			}
+		})
+		return
+	}
+	a.source.ReadOnly = p.Kind == "subscription" || a.busy
 	commandRow(c, func() {
-		if ui.Tabs(c, &a.tab, "原始配置", "覆盖配置", "最终配置").Changed() && a.tab == 2 {
-			a.loadPreview()
+		if p.Kind == "subscription" {
+			muted(c, "订阅原文 · 只读 · "+p.UpdatedAt.Local().Format("2006-01-02 15:04")+" 更新")
+		} else {
+			muted(c, "本地配置 · 可编辑")
 		}
 		ui.Box(c).Grow(1)
-		caption := "尚未应用配置"
-		if a.snapshot.State.ActiveRevision != "" {
-			caption = "已应用版本 " + short(a.snapshot.State.ActiveRevision)
+		if p.Kind == "local" {
+			if ui.Button(c, "撤销修改").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
+				a.source.Buffer.Reset(a.savedSource)
+				a.source.Buffer.MarkSaved()
+			}
+			if ui.PrimaryButton(c, "保存配置").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
+				a.saveSource()
+			}
+		} else if ui.Button(c, "创建本地副本").Disabled(a.busy || a.dirty()).Clicked() {
+			copy := *p
+			copy.ID = ""
+			copy.Kind = "local"
+			copy.Name += " · 副本"
+			copy.URL = ""
+			copy.ETag = ""
+			a.request("profile.save", map[string]any{"profile": copy}, "本地副本已创建", func(raw json.RawMessage) {
+				var p model.Profile
+				_ = json.Unmarshal(raw, &p)
+				a.selected = p.ID
+				a.accept(a.snapshot, true)
+			})
 		}
-		if a.dirty() {
-			caption += " · 有未保存的修改"
-		}
-		ui.Text(c, caption).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine()
 	})
-	switch a.tab {
-	case 0:
-		p := a.current()
-		if p == nil {
-			return
-		}
-		a.source.ReadOnly = p.Kind == "subscription" || a.busy
-		commandRow(c, func() {
-			if p.Kind == "subscription" {
-				muted(c, "订阅原文 · 只读 · "+p.UpdatedAt.Local().Format("2006-01-02 15:04")+" 更新")
-			} else {
-				muted(c, "本地配置 · 可编辑")
-			}
-			ui.Box(c).Grow(1)
-			if p.Kind == "local" {
-				if ui.Button(c, "撤销修改").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
-					a.source.Buffer.Reset(a.savedSource)
-					a.source.Buffer.MarkSaved()
-				}
-				if ui.PrimaryButton(c, "保存配置").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
-					a.saveSource()
-				}
-			} else if ui.Button(c, "创建本地副本").Disabled(a.busy || a.dirty()).Clicked() {
-				copy := *p
-				copy.ID = ""
-				copy.Kind = "local"
-				copy.Name += " · 副本"
-				copy.URL = ""
-				copy.ETag = ""
-				a.request("profile.save", map[string]any{"profile": copy}, "本地副本已创建", func(raw json.RawMessage) {
-					var p model.Profile
-					_ = json.Unmarshal(raw, &p)
-					a.selected = p.ID
-					a.accept(a.snapshot, true)
-				})
-			}
-		})
-		workspaceEditor(c.Key("source-editor"), a.source).Grow(1)
-	case 1:
-		commandRow(c, func() {
-			ui.Segmented(c, &a.scope, "全局覆盖", "当前配置覆盖")
-			ui.Text(c, "合并规则").FontSize(12).TextColor(c.Theme().TextMuted).
-				Tooltip("对象逐项合并，列表整体替换；显式 null 删除字段。false 与“未设置”不同。")
-			ui.Box(c).Grow(1)
-			state := a.global
-			saved := a.savedGlobal
-			if a.scope == 1 {
-				state = a.override
-				saved = a.savedOverride
-			}
-			if ui.Button(c, "撤销修改").Disabled(a.busy || !state.Buffer.Modified()).Clicked() {
-				state.Buffer.Reset(saved)
-				state.Buffer.MarkSaved()
-			}
-			if ui.PrimaryButton(c, "保存覆盖").Disabled(a.busy || !state.Buffer.Modified()).Clicked() {
-				a.saveOverride()
-			}
-		})
-		state := a.global
-		if a.scope == 1 {
-			state = a.override
-		}
-		state.ReadOnly = a.busy
-		workspaceEditor(c.Key(fmt.Sprint("override-", a.scope)), state).Grow(1)
-	case 2:
-		a.finalView(c)
-	}
+	workspaceEditor(c.Key("source-editor"), a.source).Grow(1)
 }
 func (a *App) finalView(c *ui.Context) {
 	commandRow(c, func() {
@@ -173,7 +161,7 @@ func (a *App) finalView(c *ui.Context) {
 				mygo.Clipboard.WriteText(a.preview.Hash)
 			}
 		}
-		if action(c, scanIcon, "刷新预览", false).Disabled(a.busy).Clicked() {
+		if action(c, scanIcon, "刷新预览", false).Disabled(a.busy || !a.connected || a.current() == nil).Clicked() {
 			a.loadPreview()
 		}
 		if action(c, nil, "与已应用版本比较", false).Disabled(a.busy || a.snapshot.State.ActiveRevision == "" || a.preview.YAML == "").Clicked() {
@@ -622,10 +610,13 @@ func (a *App) history() {
 								ui.Text(c, short(r.ID)).Bold()
 								muted(c, r.CreatedAt.Local().Format(time.DateTime))
 								muted(c, "SHA-256 "+short(r.Hash))
+								if r.GlobalOverrideName != "" {
+									muted(c, "全局覆盖 · "+r.GlobalOverrideName)
+								}
 							})
 							if r.ID == a.snapshot.State.ActiveRevision {
 								stateLabel(c, "当前版本", c.Theme().Success)
-							} else if ui.Button(c, "恢复并应用").Disabled(a.busy).Clicked() {
+							} else if ui.Button(c, "恢复并应用").Disabled(a.busy || a.dirty()).Clicked() {
 								a.request("config.restore", map[string]string{"id": r.ID}, "历史版本已恢复", nil)
 								window.Close()
 							}

@@ -131,6 +131,7 @@ func (m *Manager) Snapshot() model.Snapshot {
 	m.mu.RUnlock()
 	status := model.Status{Protocol: model.ProtocolVersion, Privileged: os.Geteuid() == 0, Running: m.core.Running(), ActiveRevision: s.ActiveRevision, ActiveProfile: s.ActiveProfile, Error: lastError, KernelDirectory: m.kernel.Inbox}
 	status.RuntimeDirectory = m.runtime
+	status.GlobalOverrides = true
 	status.KernelAuthorized = m.approvedKernels == nil || m.approvedKernels[s.SelectedKernel]
 	for id := range m.approvedKernels {
 		status.AuthorizedKernels = append(status.AuthorizedKernels, id)
@@ -174,7 +175,8 @@ func (m *Manager) ImportProfiles(incoming model.State) error {
 			s.Profiles[index] = profile
 		}
 	}
-	s.GlobalOverride = incoming.GlobalOverride
+	s.GlobalOverrides = slices.Clone(incoming.GlobalOverrides)
+	s.SelectedGlobalOverride = incoming.SelectedGlobalOverride
 	if slices.ContainsFunc(s.Installed, func(k model.Kernel) bool { return k.ID == incoming.SelectedKernel }) {
 		s.SelectedKernel = incoming.SelectedKernel
 	}
@@ -240,7 +242,7 @@ func (m *Manager) SaveOverride(id, text string) error {
 	}
 	s := m.clone()
 	if id == "" {
-		s.GlobalOverride = text
+		s.GlobalOverrideByID(s.SelectedGlobalOverride).Content = text
 	} else {
 		p, err := find(&s, id)
 		if err != nil {
@@ -250,6 +252,63 @@ func (m *Manager) SaveOverride(id, text string) error {
 	}
 	return m.commit(s)
 }
+
+func (m *Manager) SaveGlobalOverride(id string, name, content *string) error {
+	m.op.Lock()
+	defer m.op.Unlock()
+	s := m.clone()
+	preset := s.GlobalOverrideByID(id)
+	if id == "" {
+		s.GlobalOverrides = append(s.GlobalOverrides, model.GlobalOverride{ID: storage.ID()})
+		preset = &s.GlobalOverrides[len(s.GlobalOverrides)-1]
+		s.SelectedGlobalOverride = preset.ID
+	} else if preset == nil {
+		return errors.New("找不到全局覆盖")
+	}
+	if name != nil {
+		preset.Name = strings.TrimSpace(*name)
+	}
+	if preset.Name == "" {
+		return errors.New("全局覆盖名称不能为空")
+	}
+	if content != nil {
+		if _, _, err := config.Parse(*content); err != nil {
+			return err
+		}
+		preset.Content = *content
+	}
+	return m.commit(s)
+}
+
+func (m *Manager) SelectGlobalOverride(id string) error {
+	m.op.Lock()
+	defer m.op.Unlock()
+	s := m.clone()
+	if s.GlobalOverrideByID(id) == nil {
+		return errors.New("找不到全局覆盖")
+	}
+	s.SelectedGlobalOverride = id
+	return m.commit(s)
+}
+
+func (m *Manager) DeleteGlobalOverride(id string) error {
+	m.op.Lock()
+	defer m.op.Unlock()
+	s := m.clone()
+	i := slices.IndexFunc(s.GlobalOverrides, func(p model.GlobalOverride) bool { return p.ID == id })
+	if i < 0 {
+		return errors.New("找不到全局覆盖")
+	}
+	if len(s.GlobalOverrides) == 1 {
+		return errors.New("请至少保留一份全局覆盖")
+	}
+	s.GlobalOverrides = slices.Delete(s.GlobalOverrides, i, i+1)
+	if s.SelectedGlobalOverride == id {
+		s.SelectedGlobalOverride = s.GlobalOverrides[min(i, len(s.GlobalOverrides)-1)].ID
+	}
+	return m.commit(s)
+}
+
 func (m *Manager) Subscribe(ctx context.Context, name, address string, interval int) (model.Profile, error) {
 	if interval < 0 || interval > 8760 {
 		return model.Profile{}, errors.New("更新间隔必须为 0–8760 小时")
@@ -360,7 +419,11 @@ func (m *Manager) compile(s model.State, id string, content, global, override *s
 	if content != nil {
 		raw = *content
 	}
-	g := s.GlobalOverride
+	preset := s.GlobalOverrideByID(s.SelectedGlobalOverride)
+	if preset == nil {
+		return model.Preview{}, nil, errors.New("找不到全局覆盖")
+	}
+	g := preset.Content
 	if global != nil {
 		g = *global
 	}
@@ -368,10 +431,14 @@ func (m *Manager) compile(s model.State, id string, content, global, override *s
 	if override != nil {
 		o = *override
 	}
-	return config.Compile(config.Layer{Name: source, Content: raw}, config.Layer{Name: "全局覆盖", Content: g}, config.Layer{Name: "当前配置覆盖", Content: o})
+	return config.Compile(config.Layer{Name: source, Content: raw}, config.Layer{Name: "全局覆盖 · " + preset.Name, Content: g}, config.Layer{Name: "当前配置覆盖", Content: o})
 }
-func (m *Manager) Preview(id string, content, global, override *string) (model.Preview, error) {
-	p, _, err := m.compile(m.clone(), id, content, global, override)
+func (m *Manager) Preview(id, globalID string, content, global, override *string) (model.Preview, error) {
+	s := m.clone()
+	if globalID != "" {
+		s.SelectedGlobalOverride = globalID
+	}
+	p, _, err := m.compile(s, id, content, global, override)
 	if err != nil {
 		return p, err
 	}
@@ -463,7 +530,9 @@ func (m *Manager) apply(ctx context.Context, s model.State, id string) error {
 	if err != nil {
 		return err
 	}
-	r := model.Revision{ID: storage.ID(), ProfileID: id, KernelID: k.ID, Hash: p.Hash, CreatedAt: time.Now(), GlobalOverride: s.GlobalOverride}
+	preset := s.GlobalOverrideByID(s.SelectedGlobalOverride)
+	r := model.Revision{ID: storage.ID(), ProfileID: id, KernelID: k.ID, Hash: p.Hash, CreatedAt: time.Now(),
+		GlobalOverride: preset.Content, GlobalOverrideID: preset.ID, GlobalOverrideName: preset.Name}
 	profile, _ := find(&s, id)
 	r.Source = profile.Content
 	r.ProfileOverride = profile.Override
@@ -638,11 +707,35 @@ func (m *Manager) Restore(ctx context.Context, id string) error {
 			}
 			p.Content = r.Source
 			p.Override = r.ProfileOverride
-			s.GlobalOverride = r.GlobalOverride
+			restoreGlobalOverride(&s, r)
 			return m.error(m.apply(ctx, s, p.ID))
 		}
 	}
 	return errors.New("找不到历史版本")
+}
+
+func restoreGlobalOverride(s *model.State, r model.Revision) {
+	id := r.GlobalOverrideID
+	if id == "" {
+		id = s.SelectedGlobalOverride
+	}
+	if preset := s.GlobalOverrideByID(id); preset != nil && preset.Content == r.GlobalOverride {
+		s.SelectedGlobalOverride = id
+		return
+	}
+	name := "恢复的全局覆盖"
+	if r.GlobalOverrideName != "" {
+		name = r.GlobalOverrideName + " · 历史"
+	}
+	for _, preset := range s.GlobalOverrides {
+		if preset.Name == name && preset.Content == r.GlobalOverride {
+			s.SelectedGlobalOverride = preset.ID
+			return
+		}
+	}
+	preset := model.GlobalOverride{ID: storage.ID(), Name: name, Content: r.GlobalOverride}
+	s.GlobalOverrides = append(s.GlobalOverrides, preset)
+	s.SelectedGlobalOverride = preset.ID
 }
 func (m *Manager) Logs(after uint64) []model.Log { return m.core.Logs.Since(after) }
 func (m *Manager) Core(ctx context.Context, method, path string, payload any) ([]byte, error) {
