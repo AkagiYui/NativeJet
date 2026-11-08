@@ -99,6 +99,7 @@ func (a *App) start() {
 		options.TitleBarStyle = mygo.TitleBarHidden
 		options.TitleBarHeight = toolbarHeight
 	}
+	a.spotlight.showOnStartup()
 	a.win = mygo.NewWindow(options)
 	if a.page == settingsPage {
 		a.refreshLoginItem()

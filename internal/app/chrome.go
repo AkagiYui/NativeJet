@@ -27,6 +27,7 @@ var (
 	logIcon         = outlineIcon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>`)
 	serviceIcon     = outlineIcon(`<path d="M12 2.5 20 6v5c0 5-3 8-8 10.5C7 19 4 16 4 11V6zM8.5 12l2.5 2.5 4.5-5"/>`)
 	settingsIcon    = outlineIcon(`<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4"/>`)
+	guideIcon       = outlineIcon(`<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1.2.8-1.5 1.3-1.5 2.5M12 16.5h.01"/>`)
 	plusIcon        = outlineIcon(`<path d="M12 5v14M5 12h14"/>`)
 	downloadIcon    = outlineIcon(`<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>`)
 	folderIcon      = outlineIcon(`<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`)
@@ -43,8 +44,9 @@ func (a *App) view(c *ui.Context) {
 	ui.Column(c).Fill().Children(func() {
 		ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			a.sidebar(c)
-			ui.Column(c.Key("page-" + a.page)).Grow(1).FillHeight().MinWidth(0).Children(func() {
-				switch a.page {
+			page := a.displayedPage()
+			ui.Column(c.Key("page-" + page)).Grow(1).FillHeight().MinWidth(0).Children(func() {
+				switch page {
 				case "配置":
 					a.configView(c)
 				case "内核":
@@ -68,6 +70,7 @@ func (a *App) view(c *ui.Context) {
 		})
 		a.statusBar(c)
 	})
+	a.spotlight.view(c)
 }
 
 func (a *App) sidebar(c *ui.Context) {
@@ -113,7 +116,7 @@ func (a *App) navItem(c *ui.Context, icon *ui.SVG, name string) bool {
 	p := palette(c)
 	item := ui.RadioBase(c.Key(name), &a.page, name).Label(name).Height(30).FillWidth().
 		Radius(controlRadius).Padding(0, 10).Gap(8).AlignItems(ui.Center)
-	active := a.page == name
+	active := a.displayedPage() == name
 	ink, weight := p.TextMuted, 400
 	if active {
 		item.Background(p.active)
@@ -156,7 +159,8 @@ func (a *App) kernelStatus(c *ui.Context) {
 			stateLabel(c, state, ink)
 		})
 		ui.Text(c, version).FontSize(11).TextColor(t.TextMuted).SingleLine().Tooltip(version)
-		if action(c, nil, button, false).FillWidth().Disabled(a.busy || !a.connected).Clicked() {
+		if action(c, nil, button, false).Bind(&a.spotlight.targets[spotlightStart]).
+			FillWidth().Disabled(a.busy || !a.connected).Clicked() {
 			a.toggleCore()
 		}
 	})
@@ -199,6 +203,13 @@ func (a *App) statusBar(c *ui.Context) {
 			if action(c.Key("show-logs"), nil, "查看内核日志", false).Clicked() {
 				a.openLogs()
 			}
+		}
+		guide := ui.ButtonBase(c.Key("usage-guide")).Label("使用引导").Role(ui.RoleLink).Cursor(ui.CursorPointer).Shrink(0)
+		guide.Children(func() {
+			ui.Text(c, "使用引导").FontSize(11).TextColor(p.Accent).Underline().SingleLine()
+		})
+		if guide.Clicked() {
+			a.spotlight.show()
 		}
 		ui.Text(c.Key("version"), platformName+" · "+buildinfo.Version).FontSize(11).TextColor(p.TextMuted).SingleLine().Shrink(0)
 	})

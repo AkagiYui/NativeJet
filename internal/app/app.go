@@ -56,6 +56,7 @@ type App struct {
 	operationStarted                        time.Time
 	message, problem                        string
 	page, selected, loaded                  string
+	spotlight                               spotlightGuide
 	loadedGlobal                            string
 	tab, scope, format, field               int
 	fields                                  ui.ListState
@@ -124,6 +125,7 @@ func New(o Options) (*App, error) {
 		o.Helper = bundledHelper(exe)
 	}
 	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
+	a.spotlight.dismissedPath = filepath.Join(o.Data, "guide-dismissed")
 	a.loadAppearance()
 	a.loadStartup()
 	a.loginItem.available = manageLoginItem

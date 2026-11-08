@@ -18,7 +18,8 @@ import (
 
 func (a *App) configView(c *ui.Context) {
 	workspaceHeader(c, configIcon, "配置", func() {
-		if action(c, plusIcon, "添加配置", false).Disabled(a.busy || !a.connected).Clicked() {
+		if action(c, plusIcon, "添加配置", false).Bind(&a.spotlight.targets[spotlightConfig]).
+			Disabled(a.busy || !a.connected).Clicked() {
 			a.addConfig()
 		}
 		if action(c, nil, "历史版本", false).Disabled(a.busy).Clicked() {
@@ -253,7 +254,8 @@ func (a *App) kernelView(c *ui.Context) {
 		if action(c, scanIcon, "重新扫描", false).Disabled(a.busy || !a.connected).Clicked() {
 			a.request("kernel.scan", nil, "内核目录扫描完成", nil)
 		}
-		if action(c, downloadIcon, "下载内核", true).Disabled(a.busy || !a.connected).Clicked() {
+		if action(c, downloadIcon, "下载内核", true).Bind(&a.spotlight.targets[spotlightKernel]).
+			Disabled(a.busy || !a.connected).Clicked() {
 			a.downloadDialog()
 		}
 	})
