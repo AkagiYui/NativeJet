@@ -227,6 +227,8 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		return m.core.Traffic(args.History), nil
 	case "metrics":
 		return m.metrics(ctx, args.Section)
+	case "services.test":
+		return m.testServices(ctx, args.ID)
 	case "geo.status":
 		return m.geoStatus(ctx)
 	case "geo.update":

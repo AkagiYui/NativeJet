@@ -148,6 +148,8 @@ type Status struct {
 	AuthorizedKernels []string `json:"authorizedKernels,omitempty"`
 	GlobalOverrides   bool     `json:"globalOverrides,omitempty"`
 	GeoData           bool     `json:"geoData,omitempty"`
+	ServiceTests      bool     `json:"serviceTests,omitempty"`
+	ServiceCatalog    bool     `json:"serviceCatalog,omitempty"`
 }
 
 type Snapshot struct {
@@ -170,6 +172,8 @@ type Connection struct {
 		Network         string `json:"network"`
 		Type            string `json:"type"`
 		Host            string `json:"host"`
+		SourceIP        string `json:"sourceIP"`
+		SourcePort      string `json:"sourcePort"`
 		DestinationIP   string `json:"destinationIP"`
 		DestinationPort string `json:"destinationPort"`
 		Process         string `json:"process"`

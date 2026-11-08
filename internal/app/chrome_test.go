@@ -72,6 +72,28 @@ func TestStatusBarDoesNotMoveWorkspace(t *testing.T) {
 	assertPosition("privileged service connected")
 }
 
+func TestServiceAddressRequiresCommandClick(t *testing.T) {
+	a, err := New(Options{Data: t.TempDir(), Helper: "/unused", Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.page = serviceTestsPage
+	tester := ui.NewTester(a.view, 920, 640)
+	const site = "https://www.google.com/"
+	if err := tester.Click(site); err != nil {
+		t.Fatal(err)
+	}
+	if len(tester.OpenedURLs()) != 0 {
+		t.Fatal("ordinary click opened the service address")
+	}
+	if err := tester.ClickWith(ui.Cmd, site); err != nil {
+		t.Fatal(err)
+	}
+	if got := tester.OpenedURLs(); len(got) != 1 || got[0] != site {
+		t.Fatalf("command-click opened %v", got)
+	}
+}
+
 func TestPagesShareOneBottomEdge(t *testing.T) {
 	a, err := New(Options{Data: t.TempDir(), Helper: "/unused", Development: true})
 	if err != nil {
@@ -79,7 +101,7 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 	}
 	a.connected = true
 	a.accept(model.Snapshot{
-		Status:  model.Status{KernelDirectory: "/kernels", Running: true},
+		Status:  model.Status{KernelDirectory: "/kernels", Running: true, ServiceTests: true, ServiceCatalog: true},
 		State:   model.State{Profiles: []model.Profile{{ID: "local", Name: "测试配置", Kind: "local", Content: "mode: rule\n"}}},
 		Kernels: []model.Kernel{{ID: "sample", Name: "mihomo", Path: "/kernels/mihomo", Arch: "arm64"}},
 	}, true)
@@ -110,7 +132,7 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		}
 		for _, page := range []struct {
 			name, content string
-		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {proxiesPage, ""}, {"连接", "活动连接列表"}, {"日志", "日志列表"}, {settingsPage, ""}} {
+		}{{"配置", "最终配置字段"}, {"内核", "识别到的内核"}, {proxiesPage, ""}, {"连接", "活动连接列表"}, {serviceTestsPage, "服务测试结果"}, {"日志", "日志列表"}, {settingsPage, ""}} {
 			a.page, a.tab, a.format = page.name, 2, 0
 			tester.Frame()
 			if got := bounds("应用状态栏"); got != bar {

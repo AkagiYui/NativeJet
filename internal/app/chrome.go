@@ -15,22 +15,23 @@ var brandIconSVG []byte
 var brandOutlineSVG []byte
 
 var (
-	brandIcon    = ui.MustParseSVG(brandIconSVG)
-	brandOutline = ui.MustParseSVG(brandOutlineSVG)
-	kernelIcon   = outlineIcon(`<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/>`)
-	geoDataIcon  = outlineIcon(`<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>`)
-	configIcon   = outlineIcon(`<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M8 12h8m-8 4h6"/>`)
-	proxiesIcon  = outlineIcon(`<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>`)
-	linkIcon     = outlineIcon(`<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-6 4v-4h12v4"/>`)
-	metricsIcon  = outlineIcon(`<path d="M3 12h4l3-7 4 14 3-7h4"/>`)
-	logIcon      = outlineIcon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>`)
-	serviceIcon  = outlineIcon(`<path d="M12 2.5 20 6v5c0 5-3 8-8 10.5C7 19 4 16 4 11V6zM8.5 12l2.5 2.5 4.5-5"/>`)
-	settingsIcon = outlineIcon(`<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4"/>`)
-	plusIcon     = outlineIcon(`<path d="M12 5v14M5 12h14"/>`)
-	downloadIcon = outlineIcon(`<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>`)
-	folderIcon   = outlineIcon(`<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`)
-	scanIcon     = outlineIcon(`<path d="M19.5 8A8 8 0 1 0 20 15M20 3v5h-5"/>`)
-	panelIcon    = outlineIcon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/>`)
+	brandIcon       = ui.MustParseSVG(brandIconSVG)
+	brandOutline    = ui.MustParseSVG(brandOutlineSVG)
+	kernelIcon      = outlineIcon(`<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/>`)
+	geoDataIcon     = outlineIcon(`<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>`)
+	configIcon      = outlineIcon(`<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M8 12h8m-8 4h6"/>`)
+	proxiesIcon     = outlineIcon(`<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>`)
+	linkIcon        = outlineIcon(`<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-6 4v-4h12v4"/>`)
+	metricsIcon     = outlineIcon(`<path d="M3 12h4l3-7 4 14 3-7h4"/>`)
+	serviceTestIcon = outlineIcon(`<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>`)
+	logIcon         = outlineIcon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/>`)
+	serviceIcon     = outlineIcon(`<path d="M12 2.5 20 6v5c0 5-3 8-8 10.5C7 19 4 16 4 11V6zM8.5 12l2.5 2.5 4.5-5"/>`)
+	settingsIcon    = outlineIcon(`<path d="M4 6h16M4 12h16M4 18h16M8 4v4m8 2v4m-6 2v4"/>`)
+	plusIcon        = outlineIcon(`<path d="M12 5v14M5 12h14"/>`)
+	downloadIcon    = outlineIcon(`<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>`)
+	folderIcon      = outlineIcon(`<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>`)
+	scanIcon        = outlineIcon(`<path d="M19.5 8A8 8 0 1 0 20 15M20 3v5h-5"/>`)
+	panelIcon       = outlineIcon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/>`)
 )
 
 func outlineIcon(body string) *ui.SVG {
@@ -54,6 +55,8 @@ func (a *App) view(c *ui.Context) {
 					a.proxiesView(c)
 				case "连接":
 					a.connectionsView(c)
+				case serviceTestsPage:
+					a.serviceTestsView(c)
 				case metricsPage:
 					a.metricsView(c)
 				case "日志":
@@ -91,6 +94,7 @@ func (a *App) sidebar(c *ui.Context) {
 			a.navItem(c, geoDataIcon, geoDataPage)
 			a.navItem(c, proxiesIcon, proxiesPage)
 			a.navItem(c, linkIcon, "连接")
+			a.navItem(c, serviceTestIcon, serviceTestsPage)
 			a.navItem(c, metricsIcon, metricsPage)
 			a.navItem(c, logIcon, "日志")
 			ui.Box(c).Grow(1)

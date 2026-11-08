@@ -69,6 +69,7 @@ type App struct {
 	metricsTab                              int
 	metrics                                 [len(metricSections)]*metricsResult
 	geoData                                 *geoResult
+	serviceTests                            serviceTestState
 	nodeMetricsTable, ruleMetricsTable      metricTableState
 	providerMetricsTable                    metricTableState
 	connectionSort, kernelSort, logSort     ui.SortOrder
