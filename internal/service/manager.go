@@ -196,6 +196,9 @@ func (m *Manager) SaveProfile(p model.Profile) (model.Profile, error) {
 	if strings.TrimSpace(p.Name) == "" {
 		return p, errors.New("配置名称不能为空")
 	}
+	if p.Kind == "local" {
+		p.SubscriptionRaw = ""
+	}
 	if _, _, err := config.Parse(p.Content); err != nil {
 		return p, err
 	}
@@ -208,7 +211,7 @@ func (m *Manager) SaveProfile(p model.Profile) (model.Profile, error) {
 		if err != nil {
 			return p, err
 		}
-		if old.Kind == "subscription" && old.Content != p.Content {
+		if old.Kind == "subscription" && (old.Content != p.Content || old.SubscriptionRaw != p.SubscriptionRaw) {
 			return p, errors.New("订阅原文只读，请编辑覆盖配置或创建本地副本")
 		}
 		if old.Kind != p.Kind {
@@ -358,13 +361,16 @@ func (m *Manager) fetch(ctx context.Context, p *model.Profile) error {
 	if len(data) > config.MaxBytes {
 		return errors.New("订阅超过 4 MB")
 	}
-	if len(strings.TrimSpace(string(data))) == 0 {
-		return errors.New("订阅内容为空")
+	raw := string(data)
+	content, err := config.SubscriptionYAML(raw)
+	if err != nil {
+		return err
 	}
-	if _, _, err = config.Parse(string(data)); err != nil {
-		return fmt.Errorf("订阅不是有效的 Clash/Mihomo YAML: %w", err)
+	p.Content = content
+	p.SubscriptionRaw = ""
+	if content != raw {
+		p.SubscriptionRaw = raw
 	}
-	p.Content = string(data)
 	p.UpdatedAt = time.Now()
 	p.ETag = resp.Header.Get("ETag")
 	p.SubscriptionInfo = resp.Header.Get("Subscription-Userinfo")
@@ -407,6 +413,9 @@ func (m *Manager) Schedule(ctx context.Context) {
 		}
 	}
 }
+
+const convertedSubscriptionSource = "订阅节点（格式转换）"
+
 func (m *Manager) compile(s model.State, id string, content, global, override *string) (model.Preview, map[string]any, error) {
 	p, err := find(&s, id)
 	if err != nil {
@@ -415,9 +424,12 @@ func (m *Manager) compile(s model.State, id string, content, global, override *s
 	source := "本地原文"
 	if p.Kind == "subscription" {
 		source = "订阅原文"
+		if p.SubscriptionRaw != "" {
+			source = convertedSubscriptionSource
+		}
 	}
 	raw := p.Content
-	if content != nil {
+	if p.Kind == "local" && content != nil {
 		raw = *content
 	}
 	preset := s.GlobalOverrideByID(s.SelectedGlobalOverride)
@@ -449,6 +461,10 @@ func (m *Manager) Preview(id, globalID string, content, global, override *string
 		f.Value = config.RedactValue(f.Path, f.Value)
 		for j := range f.Trace {
 			f.Trace[j].Value = config.RedactValue(f.Path, f.Trace[j].Value)
+			if f.Trace[j].Layer == convertedSubscriptionSource {
+				// The generated YAML line does not identify a line in the raw subscription.
+				f.Trace[j].Line = 0
+			}
 		}
 	}
 	return p, nil
@@ -536,6 +552,7 @@ func (m *Manager) apply(ctx context.Context, s model.State, id string) error {
 		GlobalOverride: preset.Content, GlobalOverrideID: preset.ID, GlobalOverrideName: preset.Name}
 	profile, _ := find(&s, id)
 	r.Source = profile.Content
+	r.SubscriptionRaw = profile.SubscriptionRaw
 	r.ProfileOverride = profile.Override
 	path := m.revisionPath(r.ID)
 	if err = storage.Atomic(path, []byte(p.YAML), 0600); err != nil {
@@ -706,7 +723,11 @@ func (m *Manager) Restore(ctx context.Context, id string) error {
 			if err != nil {
 				return errors.New("历史版本所属配置已删除")
 			}
+			if p.Kind == "subscription" && (p.Content != r.Source || p.SubscriptionRaw != r.SubscriptionRaw) {
+				p.ETag = ""
+			}
 			p.Content = r.Source
+			p.SubscriptionRaw = r.SubscriptionRaw
 			p.Override = r.ProfileOverride
 			restoreGlobalOverride(&s, r)
 			return m.error(m.apply(ctx, s, p.ID))

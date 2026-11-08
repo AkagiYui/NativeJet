@@ -210,14 +210,18 @@ func Redact(text string) string {
 func RedactValue(path string, value any) any {
 	parts := strings.Split(path, ".")
 	key := strings.ToLower(parts[len(parts)-1])
-	if key == "secret" || strings.Contains(key, "password") || strings.Contains(key, "private-key") || key == "uuid" || strings.Contains(key, "token") || key == "url" || key == "authentication" || key == "users" {
+	if key == "secret" || strings.Contains(key, "password") || strings.Contains(key, "private-key") || key == "uuid" || strings.Contains(key, "token") || key == "url" || key == "authentication" || key == "users" || key == "auth-str" {
 		return "••••••••"
 	}
 	switch v := value.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for k, x := range v {
-			out[k] = RedactValue(k, x)
+			if k == "obfs" && v["type"] == "hysteria" {
+				out[k] = "••••••••"
+			} else {
+				out[k] = RedactValue(k, x)
+			}
 		}
 		return out
 	case []any:

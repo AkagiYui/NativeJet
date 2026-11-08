@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -523,6 +524,76 @@ func TestSubscriptionReadOnlyAndUpdatesRemainPending(t *testing.T) {
 		t.Fatal("failed subscription update replaced old source")
 	}
 }
+
+func TestNodeSubscriptionFollowsProfileLifecycle(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	ctx := context.Background()
+	original := base64.RawURLEncoding.EncodeToString([]byte("trojan://fixture-secret@old.example:443#node"))
+	var content atomic.Value
+	content.Store(original)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := content.Load().(string)
+		if body == original {
+			w.Header().Set("ETag", `"first"`)
+		} else {
+			w.Header().Set("ETag", `"next"`)
+		}
+		fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+	p, err := m.Subscribe(ctx, "nodes", server.URL, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, _, err := config.Parse(p.Content)
+	if err != nil || p.SourceText() != original || len(source) != 1 || source["proxies"] == nil {
+		t.Fatalf("source body or fragment lost: %v", err)
+	}
+	forged := p
+	forged.SubscriptionRaw = "changed"
+	if _, err = m.SaveProfile(forged); err == nil {
+		t.Fatal("subscription response was editable")
+	}
+	override := "proxy-groups: [{name: Route, type: select, proxies: [node]}]\nrules: ['MATCH,Route']\n"
+	if err = m.SaveOverride(p.ID, override); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := m.Preview(p.ID, "", &original, nil, nil)
+	if err != nil || !strings.Contains(preview.YAML, "MATCH,Route") || !strings.Contains(preview.YAML, "old.example") ||
+		strings.Contains(preview.YAML, "fixture-secret") {
+		t.Fatalf("invalid preview: %v", err)
+	}
+	if err = m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := m.clone()
+	current := before.Revisions[len(before.Revisions)-1]
+	if current.SubscriptionRaw != original || current.Source != p.Content {
+		t.Fatal("revision lost source or converted fragment")
+	}
+	next := "trojan://fixture-secret@new.example:443#node"
+	content.Store(next)
+	if err = m.UpdateSubscription(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	after := m.clone()
+	if after.ActiveRevision != before.ActiveRevision || after.Profiles[0].SourceText() != next || after.Profiles[0].Override != override {
+		t.Fatal("refresh changed applied configuration or lost the user's overlay")
+	}
+	content.Store(next + "\nunsupported://example.org")
+	if err = m.UpdateSubscription(ctx, p.ID); err == nil || m.clone().Profiles[0] != after.Profiles[0] {
+		t.Fatal("failed refresh replaced last usable subscription")
+	}
+	if err = m.Restore(ctx, current.ID); err != nil {
+		t.Fatal(err)
+	}
+	restored := m.clone().Profiles[0]
+	if restored.SourceText() != original || restored.Content != p.Content || restored.ETag != "" {
+		t.Fatal("restore failed to recover original body, converted fragment and cache state")
+	}
+}
+
 func TestIPCProtocolAndPersistence(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "helper.sock")

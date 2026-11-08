@@ -260,19 +260,20 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.loaded = ""
 		return
 	}
+	source := p.SourceText()
 	if force || a.loaded != p.ID {
-		a.source.Buffer.Reset(p.Content)
+		a.source.Buffer.Reset(source)
 		a.source.Buffer.MarkSaved()
-		a.savedSource = p.Content
+		a.savedSource = source
 		a.override.Buffer.Reset(p.Override)
 		a.override.Buffer.MarkSaved()
 		a.savedOverride = p.Override
 		a.loaded = p.ID
 	} else {
-		if !a.source.Buffer.Modified() && a.savedSource != p.Content {
-			a.source.Buffer.Reset(p.Content)
+		if !a.source.Buffer.Modified() && a.savedSource != source {
+			a.source.Buffer.Reset(source)
 			a.source.Buffer.MarkSaved()
-			a.savedSource = p.Content
+			a.savedSource = source
 		}
 		if !a.override.Buffer.Modified() && a.savedOverride != p.Override {
 			a.override.Buffer.Reset(p.Override)
@@ -460,9 +461,13 @@ func (a *App) busyText() string {
 	return text
 }
 func (a *App) draftParams() map[string]string {
+	content := a.source.Buffer.String()
+	if p := a.current(); p != nil && p.Kind == "subscription" {
+		content = p.Content
+	}
 	return map[string]string{
 		"id":               a.selected,
-		"content":          a.source.Buffer.String(),
+		"content":          content,
 		"global":           a.global.Buffer.String(),
 		"globalOverrideId": a.loadedGlobal,
 		"override":         a.override.Buffer.String(),

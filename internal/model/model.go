@@ -17,7 +17,15 @@ type Profile struct {
 	UpdatedAt        time.Time `json:"updatedAt"`
 	IntervalHours    int       `json:"intervalHours"`
 	SubscriptionInfo string    `json:"subscriptionInfo,omitempty"`
+	SubscriptionRaw  string    `json:"subscriptionRaw,omitempty"` // Original response when Content was converted to YAML.
 	ETag             string    `json:"etag,omitempty"`
+}
+
+func (p Profile) SourceText() string {
+	if p.Kind == "subscription" && p.SubscriptionRaw != "" {
+		return p.SubscriptionRaw
+	}
+	return p.Content
 }
 
 type GlobalOverride struct {
@@ -47,6 +55,7 @@ type Revision struct {
 	CreatedAt          time.Time `json:"createdAt"`
 	Hash               string    `json:"hash"`
 	Source             string    `json:"source"`
+	SubscriptionRaw    string    `json:"subscriptionRaw,omitempty"`
 	GlobalOverride     string    `json:"globalOverride"`
 	GlobalOverrideID   string    `json:"globalOverrideId,omitempty"`
 	GlobalOverrideName string    `json:"globalOverrideName,omitempty"`

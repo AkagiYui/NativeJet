@@ -74,14 +74,15 @@ func (f *importForm) view(c *ui.Context) {
 		case 0:
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				muted(c, "订阅地址")
-				ui.TextInput(c, &f.url).Placeholder("https://…/profile.yaml").FillWidth().Label("订阅地址")
+				ui.TextInput(c, &f.url).Placeholder("https://…/subscription").FillWidth().Label("订阅地址")
 			})
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "更新间隔（小时）")
 				ui.TextInput(c, &f.interval).Width(90).Label("订阅更新间隔")
 				muted(c, "0 为仅手动更新")
 			})
-			muted(c, "订阅更新不会自动应用。修改网络参数时请使用覆盖配置。")
+			muted(c, "支持 Clash/Mihomo YAML、明文节点列表和 Base64 节点列表。用覆盖配置补充策略组和规则。")
+			muted(c, "订阅更新后需手动应用。")
 			ui.Box(c).Grow(1)
 		case 1:
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {

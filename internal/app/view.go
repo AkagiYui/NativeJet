@@ -139,6 +139,7 @@ func (a *App) sourceView(c *ui.Context) {
 			copy.Name += " · 副本"
 			copy.URL = ""
 			copy.ETag = ""
+			copy.SubscriptionRaw = ""
 			a.request("profile.save", map[string]any{"profile": copy}, "本地副本已创建", func(raw json.RawMessage) {
 				var p model.Profile
 				_ = json.Unmarshal(raw, &p)
