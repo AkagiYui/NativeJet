@@ -1,15 +1,12 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"nativejet/internal/ipc"
 	"nativejet/internal/model"
 )
 
@@ -18,50 +15,8 @@ const metricsPage = "内核指标"
 var metricSections = [...]string{model.MetricsOverview, model.MetricsNodes, model.MetricsRules, model.MetricsProviders}
 
 type metricsResult struct {
-	tab    int
-	client *ipc.Client
-	data   model.Metrics
-	err    error
-}
-
-func (a *App) pollMetrics(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		var client *ipc.Client
-		var tab, pid int
-		mygo.RunOnMain(func() {
-			if !a.quitting && !a.installing && a.connecting == nil && a.coreRunning() &&
-				a.page == metricsPage && a.win.IsVisible() {
-				client, tab, pid = a.client, a.metricsTab, a.snapshot.Status.PID
-			}
-		})
-		if client == nil {
-			continue
-		}
-		result := &metricsResult{client: client, tab: tab}
-		probe, cancel := context.WithTimeout(ctx, 5*time.Second)
-		result.err = client.Call(probe, "metrics", map[string]string{"section": metricSections[tab]}, &result.data)
-		cancel()
-		mygo.RunOnMain(func() {
-			if a.quitting || a.installing || a.connecting != nil || !a.coreRunning() ||
-				a.client != client || a.snapshot.Status.PID != pid || a.page != metricsPage || a.metricsTab != tab {
-				return
-			}
-			if result.err == nil && result.data.PID != pid {
-				return
-			}
-			a.metrics = result
-			if a.win.IsVisible() {
-				a.win.Invalidate()
-			}
-		})
-	}
+	data model.Metrics
+	err  error
 }
 
 func (a *App) metricsView(c *ui.Context) {
@@ -78,8 +33,8 @@ func (a *App) metricsView(c *ui.Context) {
 		return
 	}
 
-	result := a.metrics
-	ready := result != nil && result.tab == a.metricsTab && result.client == a.client
+	result := a.metrics[a.metricsTab]
+	ready := result != nil
 	var data model.Metrics
 	if ready {
 		data = result.data

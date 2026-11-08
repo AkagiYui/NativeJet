@@ -44,6 +44,8 @@ type App struct {
 	globalNameWindow                        *mygo.Window
 	pendingImports                          []subscriptionLink
 	client                                  *ipc.Client
+	windowContext                           context.Context
+	windowReads                             *windowReads
 	connecting                              *ipc.Client
 	developmentClient                       *ipc.Client
 	registration                            *installation.Registration
@@ -62,10 +64,12 @@ type App struct {
 	source, global, override, final         *editor.State
 	savedSource, savedGlobal, savedOverride string
 	preview                                 model.Preview
-	connections                             model.Connections
+	previewInput                            previewInput
+	previewError                            error
+	connections                             *model.Connections
 	connectionsError, proxiesError          error
 	metricsTab                              int
-	metrics                                 *metricsResult
+	metrics                                 [len(metricSections)]*metricsResult
 	geoData                                 *geoResult
 	nodeMetricsTable, ruleMetricsTable      metricTableState
 	providerMetricsTable                    metricTableState
@@ -191,6 +195,7 @@ func (a *App) connectUsing(parent context.Context, client *ipc.Client) {
 		defer a.updateTray()
 		a.connected = err == nil
 		if err != nil {
+			a.resetWindowData()
 			a.problem = err.Error()
 			a.message = "后台服务尚未连接"
 			if a.registration != nil {
@@ -226,18 +231,16 @@ func (a *App) connectSnapshot(ctx context.Context, client *ipc.Client) (model.Sn
 	return waitSnapshot(ctx, client)
 }
 func (a *App) accept(snap model.Snapshot, force bool) {
+	defer a.refreshWindowData(false)
 	if !a.busy && snap.Status.Error != "" && snap.Status.Error != a.snapshot.Status.Error {
 		a.problem = snap.Status.Error
 	}
-	if snap.Status.PID != a.snapshot.Status.PID {
-		a.traffic = model.Traffic{}
-		a.connections = model.Connections{}
-		a.groups = nil
-		a.connectionsError, a.proxiesError = nil, nil
-		a.metrics = nil
-		a.geoData = nil
+	oldStatus := a.snapshot.Status
+	if snap.Status.PID != oldStatus.PID || snap.Status.Running != oldStatus.Running ||
+		snap.State.ActiveRevision != a.snapshot.State.ActiveRevision ||
+		snap.Status.GeoData != oldStatus.GeoData {
+		a.resetWindowData()
 	}
-	oldGlobal := a.snapshot.State.GlobalOverrideByID(a.loadedGlobal)
 	a.snapshot = snap
 	a.snapshotVersion++
 	if !a.global.Buffer.Modified() {
@@ -246,9 +249,6 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 				a.global.Buffer.Reset(preset.Content)
 				a.global.Buffer.MarkSaved()
 				a.loadedGlobal, a.savedGlobal = preset.ID, preset.Content
-				a.preview = model.Preview{}
-			} else if oldGlobal != nil && oldGlobal.Name != preset.Name {
-				a.preview = model.Preview{}
 			}
 		}
 	}
@@ -268,7 +268,6 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.override.Buffer.MarkSaved()
 		a.savedOverride = p.Override
 		a.loaded = p.ID
-		a.preview = model.Preview{}
 	} else {
 		if !a.source.Buffer.Modified() && a.savedSource != p.Content {
 			a.source.Buffer.Reset(p.Content)
@@ -381,94 +380,50 @@ func (a *App) poll(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			mygo.RunOnMain(func() {
-				if a.quitting || a.polling || a.connecting != nil || a.installing {
-					return
-				}
-				visible := a.win.IsVisible()
-				if !visible && a.tray == nil {
-					return
-				}
-				a.polling = true
-				client := a.client
-				version := a.snapshotVersion
-				page := a.page
-				inspectGeo := visible && page == geoDataPage
-				after := a.logAfter
-				paused := a.paused
-				go func() {
-					probe, cancel := context.WithTimeout(ctx, 5*time.Second)
-					defer cancel()
-					var snap model.Snapshot
-					err := client.Call(probe, "snapshot", nil, &snap)
-					var connections model.Connections
-					var logs []model.Log
-					var groups []model.Proxy
-					var connectionsError, proxiesError error
-					var geo *geoResult
-					if inspectGeo && err == nil && snap.Status.GeoData {
-						geo = &geoResult{client: client}
-						geo.err = client.Call(probe, "geo.status", nil, &geo.data)
-					}
-					if visible && err == nil && snap.Status.Running {
-						switch page {
-						case "连接":
-							connectionsError = client.Call(probe, "connections", nil, &connections)
-						case proxiesPage:
-							proxiesError = client.Call(probe, "proxies", nil, &groups)
-						}
-					}
-					if visible && err == nil && !paused {
-						_ = client.Call(probe, "logs", map[string]any{"after": after}, &logs)
-					}
-					mygo.RunOnMain(func() {
-						a.polling = false
-						// A poll can finish after a request has already refreshed the snapshot.
-						if a.quitting || client != a.client || a.connecting != nil || a.installing || version != a.snapshotVersion {
-							return
-						}
-						if a.win.IsVisible() {
-							defer a.win.Invalidate()
-						}
-						defer a.updateTray()
-						if err != nil {
-							a.metrics = nil
-							a.geoData = nil
-							if a.connected {
-								a.connected = false
-								a.problem = err.Error()
-							}
-							return
-						}
-						if !a.connected && !a.busy {
-							a.message = "后台服务已连接"
-							a.problem = snap.Status.Error
-						}
-						a.connected = true
-						a.accept(snap, false)
-						if geo != nil && (geo.err != nil || geo.data.PID == geoPID(snap.Status)) {
-							a.geoData = geo
-						}
-						a.maybeAutoStartCore()
-						if !visible {
-							return
-						}
-						switch page {
-						case "连接":
-							a.connections = connections
-							a.connectionsError = connectionsError
-						case proxiesPage:
-							a.groups = groups
-							a.proxiesError = proxiesError
-						}
-						if !paused {
-							a.appendLogs(logs)
-						}
-					})
-				}()
-			})
+			mygo.RunOnMain(a.pollSnapshot)
 		}
 	}
+}
+
+func (a *App) pollSnapshot() {
+	if a.quitting || a.polling || a.connecting != nil || a.installing || (!a.windowVisible() && a.tray == nil) {
+		return
+	}
+	a.polling = true
+	client, version := a.client, a.snapshotVersion
+	go func() {
+		probe, cancel := context.WithTimeout(a.windowContext, 5*time.Second)
+		defer cancel()
+		var snap model.Snapshot
+		err := client.Call(probe, "snapshot", nil, &snap)
+		mygo.RunOnMain(func() {
+			a.polling = false
+			// A poll can finish after a request has already refreshed the snapshot.
+			if a.quitting || client != a.client || a.connecting != nil || a.installing || version != a.snapshotVersion {
+				return
+			}
+			if a.windowVisible() {
+				defer a.win.Invalidate()
+			}
+			defer a.updateTray()
+			if err != nil {
+				if a.connected {
+					a.resetWindowData()
+					a.previewInput = previewInput{}
+					a.connected = false
+					a.problem = err.Error()
+				}
+				return
+			}
+			if !a.connected && !a.busy {
+				a.message = "后台服务已连接"
+				a.problem = snap.Status.Error
+			}
+			a.connected = true
+			a.accept(snap, false)
+			a.maybeAutoStartCore()
+		})
+	}()
 }
 
 func pendingMessage(method string) string {
@@ -477,8 +432,6 @@ func pendingMessage(method string) string {
 		return "正在应用配置"
 	case "config.restore":
 		return "正在恢复配置"
-	case "config.preview":
-		return "正在生成配置预览"
 	case "profile.save", "override.save", "globalOverride.save":
 		return "正在保存配置"
 	case "globalOverride.select":
@@ -505,16 +458,6 @@ func (a *App) busyText() string {
 		text += fmt.Sprintf(" · 已用 %d 秒", int(time.Since(a.operationStarted).Seconds()))
 	}
 	return text
-}
-func (a *App) loadPreview() {
-	if a.current() == nil {
-		return
-	}
-	a.request("config.preview", a.draftParams(), "配置预览已生成", func(raw json.RawMessage) {
-		_ = json.Unmarshal(raw, &a.preview)
-		a.final.Buffer.Reset(a.preview.YAML)
-		a.field = 0
-	})
 }
 func (a *App) draftParams() map[string]string {
 	return map[string]string{
@@ -565,7 +508,7 @@ func (a *App) apply() {
 		a.problem = "请先保存或撤销编辑，再应用配置"
 		return
 	}
-	a.request("config.apply", map[string]string{"id": a.selected}, "配置已应用", func(_ json.RawMessage) { a.loadPreview() })
+	a.request("config.apply", map[string]string{"id": a.selected}, "配置已应用", nil)
 }
 func (a *App) openDirectory() {
 	if a.snapshot.Status.KernelDirectory == "" {

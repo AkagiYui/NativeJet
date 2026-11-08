@@ -54,9 +54,13 @@ func (a *App) refreshService() {
 	if a.client.Development || a.client.Requirement != r.HelperRequirement {
 		a.client = installedClient(r)
 		a.connected = false
+		a.resetWindowData()
+		a.logs, a.logAfter = nil, 0
 		a.updateTray()
 	}
-	a.connect(context.Background())
+	if !a.connected {
+		a.connect(a.windowContext)
+	}
 }
 func (a *App) authorizationKernel(method string, params any) string {
 	if method == "config.restore" {
@@ -108,6 +112,8 @@ func (a *App) installService(remove bool, approve string, done func()) {
 	a.installing = true
 	a.busy = true
 	a.connected = false
+	a.resetWindowData()
+	a.previewInput = previewInput{}
 	a.updateTray()
 	a.problem = ""
 	a.operationCancel = nil

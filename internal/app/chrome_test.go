@@ -83,10 +83,11 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		State:   model.State{Profiles: []model.Profile{{ID: "local", Name: "测试配置", Kind: "local", Content: "mode: rule\n"}}},
 		Kernels: []model.Kernel{{ID: "sample", Name: "mihomo", Path: "/kernels/mihomo", Arch: "arm64"}},
 	}, true)
-	a.connections.Connections = []model.Connection{{ID: "sample-connection"}}
+	a.connections = &model.Connections{Connections: []model.Connection{{ID: "sample-connection"}}}
 	a.connections.Connections[0].Metadata.Host = "example.test"
 	a.appendLogs([]model.Log{{Sequence: 1, Source: "core", Level: "info", Message: "测试日志"}})
 	a.preview = model.Preview{YAML: "mode: rule\n", Hash: strings.Repeat("a", 64), Fields: []model.Field{{Path: "mode", Value: "rule"}}}
+	a.previewInput = a.currentPreviewInput()
 
 	tester := ui.NewTester(a.view, 920, 640)
 	bounds := func(label string) ui.Rect {

@@ -56,7 +56,7 @@ func (a *App) pollTraffic(ctx context.Context) {
 			if a.quitting || a.installing || a.connecting != nil || !a.connected {
 				return
 			}
-			history = a.win.IsVisible()
+			history = a.windowVisible()
 			if history || a.coreRunning() {
 				client, pid = a.client, a.snapshot.Status.PID
 			}
@@ -88,7 +88,7 @@ func (a *App) pollTraffic(ctx context.Context) {
 			if changed {
 				a.updateTray()
 			}
-			if a.win.IsVisible() && (changed || showHistory) {
+			if a.windowVisible() && (changed || showHistory) {
 				a.win.Invalidate()
 			}
 		})

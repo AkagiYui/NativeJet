@@ -89,7 +89,14 @@ func (a *App) start() {
 		a.refreshLoginItem()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	a.windowContext = ctx
 	a.win.OnClosed(cancel)
+	refresh := func() {
+		a.refreshWindowData(true)
+		a.pollSnapshot()
+	}
+	a.win.OnShow(refresh)
+	a.win.OnRestore(refresh)
 	a.win.OnClose(func(e *mygo.CloseEvent) {
 		// Keep the existing window and its drafts when there is a tray to reopen it.
 		if a.tray != nil && !a.quitting {
@@ -103,7 +110,10 @@ func (a *App) start() {
 	a.connect(ctx)
 	go a.poll(ctx)
 	go a.pollTraffic(ctx)
-	go a.pollMetrics(ctx)
+}
+
+func (a *App) windowVisible() bool {
+	return a.win != nil && a.win.IsVisible() && !a.win.IsMinimized()
 }
 
 func (a *App) toggleCore() {

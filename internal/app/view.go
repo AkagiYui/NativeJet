@@ -33,8 +33,8 @@ func (a *App) configView(c *ui.Context) {
 		a.profileRow(c)
 	}
 	commandRow(c, func() {
-		if ui.Tabs(c, &a.tab, "原始配置", "覆盖配置", "最终配置").Changed() && a.tab == 2 {
-			a.loadPreview()
+		if ui.Tabs(c, &a.tab, "原始配置", "覆盖配置", "最终配置").Changed() && a.tab == 2 && a.dirty() {
+			a.refreshPreview(false)
 		}
 		ui.Box(c).Grow(1)
 		caption := "尚未应用配置"
@@ -85,9 +85,6 @@ func (a *App) profileRow(c *ui.Context) {
 			} else {
 				a.selected = lookup[current]
 				a.accept(a.snapshot, true)
-				if a.tab == 2 {
-					a.loadPreview()
-				}
 			}
 		}
 		p := a.current()
@@ -153,24 +150,36 @@ func (a *App) sourceView(c *ui.Context) {
 	workspaceEditor(c.Key("source-editor"), a.source).Grow(1)
 }
 func (a *App) finalView(c *ui.Context) {
+	input := a.currentPreviewInput()
+	ready := input.profile != "" && a.previewInput == input && a.previewError == nil && a.connected
 	commandRow(c, func() {
 		ui.Segmented(c, &a.format, "字段与来源", "YAML").Label("最终配置视图")
 		muted(c, "已隐藏常见敏感值")
 		ui.Box(c).Grow(1)
-		if a.preview.Hash != "" {
+		if ready && a.preview.Hash != "" {
 			if action(c.Key("copy-hash"), nil, "复制 SHA-256", false).Tooltip(a.preview.Hash).Clicked() {
 				mygo.Clipboard.WriteText(a.preview.Hash)
 			}
 		}
 		if action(c, scanIcon, "刷新预览", false).Disabled(a.busy || !a.connected || a.current() == nil).Clicked() {
-			a.loadPreview()
+			a.refreshPreview(true)
 		}
-		if action(c, nil, "与已应用版本比较", false).Disabled(a.busy || a.snapshot.State.ActiveRevision == "" || a.preview.YAML == "").Clicked() {
+		if action(c, nil, "与已应用版本比较", false).Disabled(a.busy || a.snapshot.State.ActiveRevision == "" || !ready).Clicked() {
 			a.showDiff()
 		}
 	})
-	if a.preview.YAML == "" {
-		emptyState(c, configIcon, "还没有最终配置预览", "点击“刷新预览”合并原文和覆盖配置。", nil)
+	switch {
+	case !a.connected:
+		emptyState(c, configIcon, "后台服务未连接", "连接后即可生成配置预览。", nil)
+		return
+	case input.profile == "":
+		emptyState(c, configIcon, "还没有最终配置预览", "添加配置后即可生成预览。", nil)
+		return
+	case a.previewInput != input:
+		emptyState(c, configIcon, "正在生成配置预览", "", nil)
+		return
+	case a.previewError != nil:
+		emptyState(c, configIcon, "无法生成配置预览", a.previewError.Error(), nil)
 		return
 	}
 	if a.format == 1 {
@@ -335,16 +344,24 @@ func (a *App) kernelView(c *ui.Context) {
 }
 func (a *App) connectionsView(c *ui.Context) {
 	workspaceHeader(c, linkIcon, "连接", func() {
-		if a.snapshot.Status.Running && a.connectionsError == nil {
+		if a.coreRunning() && a.connections != nil && a.connectionsError == nil {
 			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
 		}
 	})
-	if !a.snapshot.Status.Running {
+	if !a.connected {
+		emptyState(c, linkIcon, "后台服务未连接", "连接后台服务后即可读取活动连接。", nil)
+		return
+	}
+	if !a.coreRunning() {
 		emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接。", nil)
 		return
 	}
 	if problem := a.connectionsError; problem != nil {
 		emptyState(c, linkIcon, "无法读取 Mihomo 控制接口", problem.Error(), nil)
+		return
+	}
+	if a.connections == nil {
+		emptyState(c, linkIcon, "正在读取活动连接", "", nil)
 		return
 	}
 	commandRow(c, func() {
