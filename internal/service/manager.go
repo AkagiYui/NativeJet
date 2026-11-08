@@ -27,6 +27,7 @@ type Manager struct {
 	mu              sync.RWMutex
 	op              sync.Mutex
 	serviceTest     sync.Mutex
+	proxyTest       sync.Mutex
 	state           model.State
 	store           *storage.Store
 	core            *core.Supervisor
@@ -127,6 +128,7 @@ func (m *Manager) Snapshot() model.Snapshot {
 	status.GeoData = true
 	status.ServiceTests = true
 	status.ServiceCatalog = true
+	status.ProxyControls = true
 	status.KernelAuthorized = m.approvedKernels == nil || m.approvedKernels[s.SelectedKernel]
 	for id := range m.approvedKernels {
 		status.AuthorizedKernels = append(status.AuthorizedKernels, id)

@@ -93,6 +93,9 @@ type App struct {
 	logSelected, logDetailSequence          uint64
 	logDetail                               *editor.State
 	groups                                  []model.Proxy
+	proxyGroups                             map[string]*proxyGroupState
+	proxyTest                               *proxyTestRun
+	proxyTestURLs                           map[string]string
 	logs                                    []model.Log
 	logAfter                                uint64
 	logLevel, search                        string
@@ -137,6 +140,7 @@ func New(o Options) (*App, error) {
 	a.loadAppearance()
 	a.loadStartup()
 	a.loadConnectionTablePreferences()
+	a.loadProxyTestURLs()
 	a.loginItem.available = manageLoginItem
 	if o.Development {
 		a.client.Requirement = developmentRequirement(o.Helper)
@@ -248,7 +252,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 	oldStatus := a.snapshot.Status
 	if snap.Status.PID != oldStatus.PID || snap.Status.Running != oldStatus.Running ||
 		snap.State.ActiveRevision != a.snapshot.State.ActiveRevision ||
-		snap.Status.GeoData != oldStatus.GeoData {
+		snap.Status.GeoData != oldStatus.GeoData || snap.Status.ProxyControls != oldStatus.ProxyControls {
 		a.resetWindowData()
 	}
 	a.snapshot = snap
@@ -459,6 +463,10 @@ func pendingMessage(method string) string {
 		return "正在停止内核"
 	case "proxies.select":
 		return "正在切换策略"
+	case "proxies.pin":
+		return "正在固定节点"
+	case "proxies.unpin":
+		return "正在恢复自动选择"
 	}
 	return "正在处理请求"
 }

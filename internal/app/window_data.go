@@ -32,6 +32,7 @@ func (a *App) resetWindowData() {
 	clear(a.metrics[:])
 	a.geoData = nil
 	a.resetServiceTests()
+	a.resetProxyTests()
 }
 
 func (a *App) refreshWindowData(preload bool) {

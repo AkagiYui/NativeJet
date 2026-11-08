@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -272,20 +271,10 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		}
 		sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
 		return groups, nil
-	case "proxies.select":
-		data, err := m.Core(ctx, http.MethodGet, "/proxies/"+url.PathEscape(args.ID), nil)
-		if err != nil {
-			return nil, err
-		}
-		var proxy model.Proxy
-		if err = json.Unmarshal(data, &proxy); err != nil {
-			return nil, err
-		}
-		if proxy.Type != "Selector" || args.Name == nil || !slices.Contains(proxy.All, *args.Name) {
-			return nil, errors.New("该策略组不支持选择此节点")
-		}
-		_, err = m.Core(ctx, http.MethodPut, "/proxies/"+url.PathEscape(args.ID), map[string]string{"name": *args.Name})
-		return nil, err
+	case "proxies.select", "proxies.pin", "proxies.unpin":
+		return nil, m.setProxy(ctx, r.Method, args.ID, args.Name)
+	case "proxies.delay":
+		return m.testProxyDelay(ctx, args.ID, args.Name, args.URL)
 	default:
 		return nil, fmt.Errorf("未知操作 %q", r.Method)
 	}

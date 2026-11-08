@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -150,6 +151,7 @@ type Status struct {
 	GeoData           bool     `json:"geoData,omitempty"`
 	ServiceTests      bool     `json:"serviceTests,omitempty"`
 	ServiceCatalog    bool     `json:"serviceCatalog,omitempty"`
+	ProxyControls     bool     `json:"proxyControls,omitempty"`
 }
 
 type Snapshot struct {
@@ -219,10 +221,32 @@ type Connections struct {
 }
 
 type Proxy struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Now  string   `json:"now"`
-	All  []string `json:"all"`
+	Name           string   `json:"name"`
+	Type           string   `json:"type"`
+	Now            string   `json:"now"`
+	All            []string `json:"all"`
+	Fixed          string   `json:"fixed,omitempty"`
+	TestURL        string   `json:"testUrl,omitempty"`
+	ExpectedStatus string   `json:"expectedStatus,omitempty"`
+}
+
+func (p Proxy) CanPin() bool {
+	return p.Type == "URLTest" || p.Type == "Fallback"
+}
+
+func (p Proxy) DelayTestURL(override string) string {
+	if address := strings.TrimSpace(override); address != "" {
+		return address
+	}
+	if p.TestURL != "" {
+		return p.TestURL
+	}
+	return "https://www.gstatic.com/generate_204"
+}
+
+type ProxyDelay struct {
+	Delay   uint16 `json:"delay,omitempty"`
+	Problem string `json:"problem,omitempty"`
 }
 
 type Release struct {

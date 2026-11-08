@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/egoist/mygo/ui"
 	"nativejet/internal/model"
@@ -35,10 +36,20 @@ func (a *App) proxiesView(c *ui.Context) {
 		return
 	}
 
+	if !a.snapshot.Status.ProxyControls {
+		commandRow(c, func() {
+			stateLabel(c, "更新后台服务后即可测速和固定节点", c.Theme().Warning)
+			if action(c.Key("settings"), settingsIcon, "打开设置", false).Clicked() {
+				a.page = settingsPage
+				a.refreshService()
+			}
+		})
+	}
+
 	const (
 		padding  = 16
 		gap      = 8
-		tileMinW = 184
+		tileMinW = 230
 	)
 	w, _ := c.Size()
 	columns := max(1, int((w-sidebarWidth-2*padding+gap)/(tileMinW+gap)))
@@ -55,57 +66,161 @@ func (a *App) proxiesView(c *ui.Context) {
 func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap float32) {
 	p := palette(c)
 	manual := group.Type == "Selector"
+	supported := a.snapshot.Status.ProxyControls
+	pinnable := group.CanPin() && supported
+	state := a.proxyGroupState(group.Name)
+	results := state.results
+	if state.resultsURL != group.DelayTestURL(state.url) {
+		results = nil
+	}
+	maxDelay, limitErr := proxyDelayLimit(state.maxDelay)
+	names := visibleProxyNames(group.All, results, state.filter, state.sort, maxDelay)
 	ui.Column(c).FillWidth().Gap(gap).Children(func() {
-		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
+		ui.Row(c.Key("heading")).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, group.Name).FontSize(15).FontWeight(600).SingleLine().Tooltip(group.Name)
 				mode := "内核管理"
 				if manual {
 					mode = "手动选择"
+				} else if group.Fixed != "" {
+					mode = "已固定 · " + group.Fixed
+				} else if pinnable {
+					mode = "自动选择 · 点击节点固定"
 				}
 				muted(c, fmt.Sprintf("%s · %s · %d 个选项", group.Type, mode, len(group.All)))
 			})
 			if group.Now != "" {
 				current := "当前 · " + group.Now
-				ui.Text(c, current).FontSize(12).TextColor(p.TextMuted).MaxWidth(260).SingleLine().Tooltip(current)
+				ui.Text(c, current).FontSize(12).TextColor(p.TextMuted).MaxWidth(220).SingleLine().Tooltip(current)
+			}
+			if pinnable && group.Fixed != "" && action(c.Key("unpin"), nil, "解除固定", false).Disabled(a.busy).Clicked() {
+				a.request("proxies.unpin", map[string]string{"id": group.Name}, "已恢复自动选择", nil)
 			}
 		})
-		grid := ui.Grid(c).Columns(columns).FillWidth().Gap(gap).Label(group.Name + "的选项")
+		if supported {
+			a.proxyTestControls(c, group, state, limitErr)
+		}
+		if len(names) == 0 {
+			muted(c.Key("no-matches"), "没有符合筛选条件的节点")
+			return
+		}
+		grid := ui.Grid(c.Key("members")).Columns(columns).FillWidth().Gap(gap).Label(group.Name + "的选项")
 		if manual {
-			grid.Role(ui.RoleRadioGroup).FocusGroup(ui.Horizontal | ui.Vertical)
+			grid.FocusGroup(ui.Horizontal | ui.Vertical)
 		}
 		selected := group.Now
 		grid.Children(func() {
-			for i, name := range group.All {
+			for _, name := range names {
 				active := name == group.Now
-				var tile ui.Element
-				if manual {
-					tile = ui.RadioBase(c.Key(i), &selected, name).Label(name).Disabled(a.busy)
-					if tile.Changed() && name != group.Now {
-						a.request("proxies.select", map[string]string{"id": group.Name, "name": name}, "策略组已更新", nil)
-					}
-				} else {
-					tile = ui.Row(c.Key(i))
-					if active {
-						tile.Label(name + "，当前使用")
-					}
-				}
-				fill, border, weight := p.Surface, p.line, 400
+				fill, border := p.Surface, p.line
 				if active {
-					fill, border, weight = p.rowSelection, p.Accent, 600
-				} else if manual && tile.Hovered() && !a.busy {
-					fill = p.SurfaceHover
+					fill, border = p.rowSelection, p.Accent
 				}
-				tile.Height(40).PaddingX(10).Gap(6).AlignItems(ui.Center).Radius(controlRadius).
-					Background(fill).Border(1, border).Tooltip(name).Children(func() {
-					ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-						ui.Text(c, name).SingleLine().FontWeight(weight)
+				ui.Row(c.Key(name)).Height(46).Gap(3).PaddingX(5).AlignItems(ui.Center).
+					Radius(controlRadius).Background(fill).Border(1, border).Children(func() {
+					control := c.Key("select")
+					var tile ui.Element
+					switch {
+					case manual:
+						tile = ui.RadioBase(control, &selected, name).Label(name).Disabled(a.busy)
+						if tile.Changed() && name != group.Now {
+							a.request("proxies.select", map[string]string{"id": group.Name, "name": name}, "策略组已更新", nil)
+						}
+					case pinnable && name != group.Fixed:
+						tile = ui.ButtonBase(control).Label("固定 " + name).Disabled(a.busy).Cursor(ui.CursorPointer)
+						if tile.Clicked() {
+							a.request("proxies.pin", map[string]string{"id": group.Name, "name": name}, "已更新固定节点", nil)
+						}
+					default:
+						tile = ui.Row(control)
+					}
+					tile.Grow(1).MinWidth(0).FillHeight().Gap(4).PaddingX(5).AlignItems(ui.Center).
+						Tooltip(proxyMemberTooltip(name, pinnable, name == group.Fixed)).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+							weight := 400
+							if active {
+								weight = 600
+							}
+							ui.Text(c, name).SingleLine().FontWeight(weight)
+							if supported {
+								delay := results[name]
+								label := proxyDelayLabel(delay)
+								if name == group.Fixed {
+									label = "已固定 · " + label
+								}
+								ui.Text(c, label).FontSize(11).TextColor(p.TextMuted).SingleLine().Tooltip(label)
+							}
+						})
+						if active {
+							ui.Icon(c, checkIcon).Size(14, 14).TextColor(p.Accent).Shrink(0)
+						}
 					})
-					if active {
-						ui.Icon(c, checkIcon).Size(14, 14).TextColor(p.Accent).Shrink(0)
+					if supported && ui.Button(c.Key("test"), "测速").Label("测速 "+name).
+						Shrink(0).Disabled(a.busy || a.proxyTest != nil).Clicked() {
+						a.startProxyTest(group, state, &name)
 					}
 				})
 			}
 		})
 	})
+}
+
+func proxyMemberTooltip(name string, pinnable, fixed bool) string {
+	if fixed {
+		return name + " · 已固定"
+	}
+	if pinnable {
+		return "固定 " + name
+	}
+	return name
+}
+
+func (a *App) proxyTestControls(c *ui.Context, group model.Proxy, state *proxyGroupState, limitErr error) {
+	run := a.proxyTest
+	testingGroup := run != nil && run.group == group.Name
+	defaultURL := group.DelayTestURL("")
+	ui.Row(c.Key("url")).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, "测速 URL").FontSize(12).Shrink(0)
+		ui.TextInput(c.Key("input"), &state.url).Grow(1).MinWidth(120).Height(controlHeight).
+			Label(group.Name + "的测速 URL").Placeholder(defaultURL).Tooltip("留空使用 " + defaultURL).Disabled(testingGroup)
+		if testingGroup {
+			label := "取消测速"
+			if run.name != "" {
+				label = "取消单节点测速"
+			}
+			if action(c.Key("cancel"), nil, label, false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
+				run.cancel()
+				run.cancel = nil
+			}
+		} else if action(c.Key("test-all"), nil, "整组测速", false).Shrink(0).Disabled(a.busy || run != nil).Clicked() {
+			a.startProxyTest(group, state, nil)
+		}
+	})
+	ui.Row(c.Key("filter")).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Select(c.Key("status"), &state.filter, []string{proxyFilterAll, proxyFilterSuccess, proxyFilterFailed, proxyFilterUntested}).Width(117).Label("按测速结果筛选")
+		ui.TextInput(c.Key("max"), &state.maxDelay).Width(140).Height(controlHeight).Placeholder("最高延迟（ms）").Label("最高延迟（毫秒）")
+		ui.Select(c.Key("sort"), &state.sort, []string{proxyOrderOriginal, proxyOrderFastest, proxyOrderSlowest}).Width(138).Label("节点排序")
+	})
+	if limitErr != nil {
+		stateLabel(c.Key("invalid-delay"), limitErr.Error(), c.Theme().Warning)
+	}
+	if state.problem != "" {
+		stateLabel(c.Key("problem"), state.problem, c.Theme().Warning)
+	} else if testingGroup {
+		label := "正在测量整组延迟"
+		if run.name != "" {
+			label = "正在测速 · " + run.name
+		}
+		stateLabel(c.Key("testing"), label, c.Theme().Accent)
+	}
+}
+
+func proxyDelayLabel(result model.ProxyDelay) string {
+	if result.Problem != "" {
+		return result.Problem
+	}
+	if result.Delay == 0 {
+		return "未测速"
+	}
+	return strconv.Itoa(int(result.Delay)) + " ms"
 }
