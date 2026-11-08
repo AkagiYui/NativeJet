@@ -172,6 +172,53 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		t.Errorf("connection inspector title moved from %v to %v when the close button appeared", connectionHeader, got)
 	}
 	bounds("关闭此连接")
+	tester.SetSize(920, 640)
+	tester.SetTitleBar(ui.TitleBar{Height: toolbarHeight, Right: 138})
+	filter, closeAll, columns := bounds("搜索连接"), bounds("关闭全部"), bounds("列设置")
+	table := bounds("活动连接列表")
+	if filter.Y != closeAll.Y || closeAll.Y != columns.Y || columns.Y+columns.H > table.Y ||
+		filter.X+filter.W > closeAll.X || closeAll.X+closeAll.W > columns.X || columns.X+columns.W > 920-138 {
+		t.Errorf("connection toolbar controls overlap or leave the header: filter %v, close all %v, columns %v, table %v", filter, closeAll, columns, table)
+	}
+	if err := tester.Click("搜索连接"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Type("no match")
+	bounds("没有匹配的连接")
+
+	a.page = serviceTestsPage
+	tester.Frame()
+	filter, testAll := bounds("搜索服务"), bounds("测试全部")
+	if filter.Y != testAll.Y || filter.X+filter.W > testAll.X || testAll.X+testAll.W > 920-138 ||
+		testAll.Y+testAll.H > toolbarHeight || bounds("服务测试结果").Y != toolbarHeight {
+		t.Errorf("service controls are outside the top row: filter %v, test all %v", filter, testAll)
+	}
+	if err := tester.Click("搜索服务"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Type("no match")
+	bounds("没有匹配的服务")
+	a.snapshot.Status.ServiceCatalog = false
+	tester.Frame()
+	updateHint, filter, settings := bounds("更新后台服务后即可测试"), bounds("搜索服务"), bounds("打开设置")
+	if updateHint.X+updateHint.W > filter.X || filter.X+filter.W > settings.X || settings.X+settings.W > 920-138 {
+		t.Errorf("service controls overlap the update notice or title bar: notice %v, filter %v, settings %v", updateHint, filter, settings)
+	}
+
+	a.page = metricsPage
+	a.metrics[2] = &metricsResult{data: model.Metrics{Rules: []model.RuleMetric{{Type: "Match", Proxy: "DIRECT"}}}}
+	tester.Frame()
+	tabs := bounds("指标类别")
+	if tabs.Y+tabs.H > toolbarHeight || tabs.X+tabs.W > 920-138 {
+		t.Errorf("metrics tabs are outside the top row: %v", tabs)
+	}
+	if err := tester.Click("规则"); err != nil {
+		t.Fatal(err)
+	}
+	if a.metricsTab != 2 || bounds("规则指标").Y != toolbarHeight {
+		t.Error("rules tab did not open the rules table immediately below the toolbar")
+	}
+	tester.SetTitleBar(ui.TitleBar{})
 
 	a.page = "日志"
 	a.logSelected, a.logSelection = 0, -1

@@ -87,13 +87,28 @@ func (a *App) serviceTestsView(c *ui.Context) {
 	updateNeeded := a.connected && !supported
 	ready := a.coreRunning() && supported
 	workspaceHeader(c, serviceTestIcon, serviceTestsPage, func() {
+		if updateNeeded {
+			stateLabel(c, "更新后台服务后即可测试", c.Theme().Warning)
+		} else if state.run != nil {
+			stateLabel(c, "正在测试", c.Theme().Accent)
+		} else if !state.finished.IsZero() {
+			muted(c, "上次测试："+state.finished.Format("15:04:05"))
+		}
+		if ui.TextInput(c.Key("service-search"), &state.search).Width(170).MinWidth(110).Shrink(1).
+			Height(controlHeight).Placeholder("搜索服务或地址").Label("搜索服务").Changed() {
+			state.table.ScrollTo(0, ui.Start)
+		}
 		if run := state.run; run != nil {
-			if action(c, nil, "取消测试", false).Disabled(run.cancel == nil).Clicked() {
+			if action(c, nil, "取消测试", false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
 				run.cancel()
 				run.cancel = nil
 			}
-		} else if ready && action(c, scanIcon, "测试全部", true).Disabled(a.busy).Clicked() {
+		} else if ready && action(c, scanIcon, "测试全部", true).Shrink(0).Disabled(a.busy).Clicked() {
 			a.startServiceTests("")
+		}
+		if updateNeeded && action(c, settingsIcon, "打开设置", false).Shrink(0).Clicked() {
+			a.page = settingsPage
+			a.refreshService()
 		}
 	})
 	modifier := "Ctrl"
@@ -101,24 +116,6 @@ func (a *App) serviceTestsView(c *ui.Context) {
 		modifier = "⌘"
 	}
 	linkHint := modifier + " 点击地址打开"
-	commandRow(c, func() {
-		if ui.TextInput(c, &state.search).Width(170).Placeholder("搜索服务或地址").Label("搜索服务").Changed() {
-			state.table.ScrollTo(0, ui.Start)
-		}
-		muted(c, "点击服务名重测 · "+linkHint)
-		ui.Box(c).Grow(1)
-		if updateNeeded {
-			stateLabel(c, "更新后台服务后即可测试", c.Theme().Warning)
-			if action(c, settingsIcon, "打开设置", false).Clicked() {
-				a.page = settingsPage
-				a.refreshService()
-			}
-		} else if state.run != nil {
-			stateLabel(c, "正在测试", c.Theme().Accent)
-		} else if !state.finished.IsZero() {
-			muted(c, "上次测试："+state.finished.Format("15:04:05"))
-		}
-	})
 	problem := state.problem
 	if state.err != nil {
 		problem = state.err.Error()

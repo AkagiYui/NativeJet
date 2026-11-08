@@ -26,7 +26,7 @@ func (a *App) geoUpdateAction(c *ui.Context) {
 	ready := a.coreRunning() && a.snapshot.Status.GeoData && result != nil &&
 		result.client == a.client && result.err == nil && result.data.SourceError == "" &&
 		result.data.PID == a.snapshot.Status.PID
-	if action(c, downloadIcon, "立即更新", true).Disabled(a.busy || !ready).Clicked() {
+	if action(c, downloadIcon, "立即更新", true).Shrink(0).Disabled(a.busy || !ready).Clicked() {
 		a.request("geo.update", map[string]int{"pid": result.data.PID}, "Mihomo 已完成 GeoData 更新检查", nil)
 	}
 }
@@ -39,38 +39,45 @@ var geoLabels = map[string]string{
 }
 
 func (a *App) geoDataView(c *ui.Context) {
-	workspaceHeader(c, geoDataIcon, geoDataPage, func() { a.geoUpdateAction(c) })
+	result := a.geoData
+	var emptyTitle, emptyDetail string
 	switch {
 	case !a.connected:
-		emptyState(c, geoDataIcon, "后台服务未连接", "连接后即可读取 GeoData。", nil)
-		return
+		emptyTitle, emptyDetail = "后台服务未连接", "连接后即可读取 GeoData。"
 	case !a.snapshot.Status.GeoData:
-		emptyState(c, geoDataIcon, "后台服务需要更新", "请在「设置」中更新后台服务以启用 GeoData。", nil)
-		return
-	case a.geoData == nil || a.geoData.client != a.client:
-		emptyState(c, geoDataIcon, "正在读取 GeoData", "", nil)
-		return
-	case a.geoData.err != nil:
-		emptyState(c, geoDataIcon, "无法读取 GeoData", a.geoData.err.Error(), nil)
+		emptyTitle, emptyDetail = "后台服务需要更新", "请在「设置」中更新后台服务以启用 GeoData。"
+	case result == nil || result.client != a.client:
+		emptyTitle = "正在读取 GeoData"
+	case result.err != nil:
+		emptyTitle, emptyDetail = "无法读取 GeoData", result.err.Error()
+	}
+
+	workspaceHeader(c, geoDataIcon, geoDataPage, func() {
+		if emptyTitle == "" {
+			data := result.data
+			switch {
+			case data.SourceError != "":
+				stateLabel(c, "下载源不可用", c.Theme().Warning)
+			case data.DatMode == nil:
+				muted(c, "内核未报告 GeoIP 格式")
+			case *data.DatMode:
+				muted(c, "当前 GeoIP 格式 · DAT")
+			default:
+				muted(c, "当前 GeoIP 格式 · MMDB")
+			}
+		}
+		a.geoUpdateAction(c)
+	})
+	if emptyTitle != "" {
+		emptyState(c, geoDataIcon, emptyTitle, emptyDetail, nil)
 		return
 	}
 
-	data := a.geoData.data
-	commandRow(c, func() {
-		switch {
-		case data.SourceError != "":
-			muted(c, data.SourceError)
-		case data.DatMode == nil:
-			muted(c, "内核未报告 GeoIP 格式")
-		default:
-			format := "MMDB"
-			if *data.DatMode {
-				format = "DAT"
-			}
-			muted(c, "当前 GeoIP 格式 · "+format)
-		}
-	})
+	data := result.data
 	detailScroll(c, func() {
+		if data.SourceError != "" {
+			muted(c, data.SourceError)
+		}
 		property(c, "内核运行目录", a.snapshot.Status.RuntimeDirectory)
 		muted(c, "下载源由运行中的 Mihomo 报告。本地文件可能来自先前的下载。")
 		if a.coreRunning() && data.SourceError != "" {

@@ -20,9 +20,8 @@ type metricsResult struct {
 }
 
 func (a *App) metricsView(c *ui.Context) {
-	workspaceHeader(c, metricsIcon, metricsPage, nil)
-	commandRow(c, func() {
-		ui.Tabs(c, &a.metricsTab, "概览", "节点", "规则", "集合").Label("指标类别")
+	workspaceHeader(c, metricsIcon, metricsPage, func() {
+		ui.Tabs(c, &a.metricsTab, "概览", "节点", "规则", "集合").Shrink(0).Label("指标类别")
 	})
 	if !a.connected {
 		emptyState(c, metricsIcon, "后台服务未连接", "连接后台服务后即可读取内核指标。", nil)

@@ -246,30 +246,26 @@ func kernelStateLabel(k model.Kernel, selected string) string {
 }
 
 func (a *App) kernelView(c *ui.Context) {
+	status := a.snapshot.Status
 	workspaceHeader(c, kernelIcon, "内核", func() {
-		if action(c, folderIcon, "打开目录", false).Disabled(!a.connected).Clicked() {
+		path := status.KernelDirectory
+		if path == "" {
+			path = "等待后台服务"
+		}
+		ui.Text(c, "内核目录 · "+path).FontSize(12).TextColor(c.Theme().TextMuted).
+			SingleLine().MinWidth(0).MaxWidth(264).Shrink(1).Tooltip(path)
+		ui.Text(c, fmt.Sprintf("%d 个内核", len(a.snapshot.Kernels))).FontSize(12).
+			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0)
+		if action(c, folderIcon, "打开目录", false).Shrink(0).Disabled(!a.connected).Clicked() {
 			a.openDirectory()
 		}
-		if action(c, scanIcon, "重新扫描", false).Disabled(a.busy || !a.connected).Clicked() {
+		if action(c, scanIcon, "重新扫描", false).Shrink(0).Disabled(a.busy || !a.connected).Clicked() {
 			a.request("kernel.scan", nil, "内核目录扫描完成", nil)
 		}
-		if action(c, downloadIcon, "下载内核", true).Bind(&a.spotlight.targets[spotlightKernel]).
+		if action(c, downloadIcon, "下载内核", true).Shrink(0).Bind(&a.spotlight.targets[spotlightKernel]).
 			Disabled(a.busy || !a.connected).Clicked() {
 			a.downloadDialog()
 		}
-	})
-	status := a.snapshot.Status
-	commandRow(c, func() {
-		ui.Icon(c, folderIcon).Size(15, 15).TextColor(c.Theme().TextMuted)
-		ui.Text(c, "内核目录").FontWeight(600)
-		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-			path := status.KernelDirectory
-			if path == "" {
-				path = "等待后台服务"
-			}
-			ui.Text(c, path).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Tooltip(path)
-		})
-		muted(c, fmt.Sprintf("%d 个内核", len(a.snapshot.Kernels)))
 	})
 	if len(a.snapshot.Kernels) == 0 {
 		emptyState(c, kernelIcon, "还没有发现内核", "把 "+platformName+" 内核放入目录后重新扫描，或点击“下载内核”。", nil)
@@ -345,15 +341,27 @@ func (a *App) kernelView(c *ui.Context) {
 	})
 }
 func (a *App) connectionsView(c *ui.Context) {
+	running := a.coreRunning()
+	ready := running && a.connections != nil && a.connectionsError == nil
 	workspaceHeader(c, linkIcon, "连接", func() {
-		if ui.Tabs(c, &a.connectionTab, "活动", "已关闭").Label("连接状态").Changed() {
+		if ui.Tabs(c, &a.connectionTab, "活动", "已关闭").Shrink(0).Label("连接状态").Changed() {
 			a.connectionIndex = -1
 			a.connectionRows.ScrollTo(0, ui.Start)
 		}
-		if a.connectionTab == 1 {
+		closed := a.connectionTab == 1
+		if closed {
 			muted(c, fmt.Sprintf("%d 条记录", len(a.closedConnections)))
-		} else if a.coreRunning() && a.connections != nil && a.connectionsError == nil {
+		} else if ready {
 			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
+		}
+		ui.TextInput(c.Key("connection-search"), &a.search).Placeholder("搜索主机、地址、进程、规则或策略").
+			Width(248).MinWidth(120).Shrink(1).Height(controlHeight).Label("搜索连接").Disabled(!closed && !ready)
+		if closed {
+			if action(c.Key("clear-history"), nil, "清空历史", false).Shrink(0).Disabled(len(a.closedConnections) == 0).Clicked() {
+				a.closedConnections = nil
+			}
+		} else if action(c.Key("close-all-connections"), nil, "关闭全部", false).Shrink(0).Disabled(!ready || a.busy).Clicked() {
+			a.request("connections.closeAll", nil, "连接已关闭", nil)
 		}
 		a.connectionColumnSettings(c)
 	})
@@ -364,7 +372,7 @@ func (a *App) connectionsView(c *ui.Context) {
 		case !a.connected:
 			emptyState(c, linkIcon, "后台服务未连接", "连接后台服务后即可读取活动连接。", nil)
 			return
-		case !a.coreRunning():
+		case !running:
 			emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接。", nil)
 			return
 		case a.connectionsError != nil:
@@ -376,17 +384,6 @@ func (a *App) connectionsView(c *ui.Context) {
 		}
 		connections = a.connections.Connections
 	}
-	commandRow(c, func() {
-		ui.TextInput(c, &a.search).Placeholder("搜索主机、地址、进程、规则或策略").Grow(1).MinWidth(0).Label("搜索连接")
-		if closed {
-			if action(c.Key("clear-history"), nil, "清空历史", false).Disabled(len(a.closedConnections) == 0).Clicked() {
-				a.closedConnections = nil
-				connections = nil
-			}
-		} else if action(c.Key("close-all-connections"), nil, "关闭全部", false).Disabled(a.busy).Clicked() {
-			a.request("connections.closeAll", nil, "连接已关闭", nil)
-		}
-	})
 	rows := []model.Connection{}
 	query := strings.ToLower(a.search)
 	for _, conn := range connections {
@@ -453,28 +450,29 @@ func (a *App) connectionsView(c *ui.Context) {
 }
 
 func (a *App) logsView(c *ui.Context) {
+	var rows []model.Log
 	workspaceHeader(c, logIcon, "日志", func() {
-		label := "暂停显示"
+		ui.TextInput(c.Key("log-search"), &a.logSearch).Placeholder("搜索日志内容").
+			Width(160).MinWidth(68).Shrink(1).Height(controlHeight).Label("搜索日志")
+		ui.Select(c.Key("log-source"), &a.logSource, []string{"全部来源", "内核日志", "启动输出", "后台服务"}).
+			Width(90).MinWidth(90).Shrink(0).Padding(0, 8).Height(controlHeight).Label("日志来源")
+		ui.Select(c.Key("log-level"), &a.logLevel, []string{"全部", "info", "warning", "error", "debug"}).
+			Width(80).MinWidth(80).Shrink(0).Padding(0, 8).Height(controlHeight).Label("日志级别")
+		rows = a.filteredLogs()
+		summary := fmt.Sprintf("显示 %d 条 · 缓存 %d 条", len(rows), len(a.logs))
+		ui.Text(c, fmt.Sprintf("%d / %d 条", len(rows), len(a.logs))).FontSize(11).
+			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0).Label(summary).
+			Tooltip(summary + "\n最多保留 2000 条，暂停只停止拉取。")
+		button, label := "暂停", "暂停显示"
 		if a.paused {
-			label = "继续显示"
-			stateLabel(c.Key("paused"), "已暂停", c.Theme().Warning)
+			button, label = "继续", "继续显示"
 		}
-		if action(c.Key("pause"), nil, label, false).Clicked() {
+		if action(c.Key("pause"), nil, button, false).Shrink(0).Label(label).Tooltip(label).Clicked() {
 			a.paused = !a.paused
 		}
-		if action(c.Key("export"), downloadIcon, "导出日志", false).Clicked() {
+		if action(c.Key("export"), downloadIcon, "导出", false).Shrink(0).Label("导出日志").Tooltip("导出日志").Clicked() {
 			a.exportLogs()
 		}
-	})
-	var rows []model.Log
-	commandRow(c, func() {
-		ui.TextInput(c, &a.logSearch).Placeholder("搜索日志内容").Grow(1).MinWidth(0).Label("搜索日志")
-		ui.Select(c, &a.logSource, []string{"全部来源", "内核日志", "启动输出", "后台服务"}).Width(125).Label("日志来源")
-		ui.Select(c, &a.logLevel, []string{"全部", "info", "warning", "error", "debug"}).Width(100).Label("日志级别")
-		rows = a.filteredLogs()
-		ui.Text(c, fmt.Sprintf("显示 %d 条 · 缓存 %d 条", len(rows), len(a.logs))).FontSize(11).
-			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0).
-			Tooltip("最多保留 2000 条，暂停只停止拉取。")
 	})
 	if len(rows) == 0 {
 		if len(a.logs) == 0 {
