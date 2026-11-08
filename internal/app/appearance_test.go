@@ -8,7 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestAppearancePreservesThemeWhenChangingMenuBarLayout(t *testing.T) {
+func TestAppearancePreservesThemeWhenChangingTraySpeed(t *testing.T) {
 	a := &App{data: t.TempDir()}
 	if err := os.WriteFile(a.appearancePath(), []byte(`{"menuBarSpeedLayout":"stacked"}`), 0600); err != nil {
 		t.Fatal(err)
@@ -22,13 +22,21 @@ func TestAppearancePreservesThemeWhenChangingMenuBarLayout(t *testing.T) {
 	if !a.saveAppearance(prefs) {
 		t.Fatal(a.appearanceError)
 	}
-	tester := ui.NewTester(a.appearanceSettings, 700, 200)
-	if err := tester.Click("双列（左右并排）"); err != nil {
+	tester := ui.NewTester(a.menuBarSettings, 700, 200)
+	wantLayout := menuBarSpeedSideBySide
+	if platformName == "Windows" {
+		tester.Key(0, ui.KeyTab)
+		if !tester.Focused("托盘速率提示") {
+			t.Fatal("tray speed switch did not receive focus")
+		}
+		tester.Key(0, ui.KeySpace)
+		wantLayout = menuBarSpeedOff
+	} else if err := tester.Click("双列（左右并排）"); err != nil {
 		t.Fatal(err)
 	}
 	reloaded := &App{data: a.data}
 	reloaded.loadAppearance()
-	if want := (appearancePreferences{Theme: mygo.ThemeDark, MenuBarSpeedLayout: menuBarSpeedSideBySide}); reloaded.appearance != want {
+	if want := (appearancePreferences{Theme: mygo.ThemeDark, MenuBarSpeedLayout: wantLayout}); reloaded.appearance != want {
 		t.Fatalf("preferences reloaded as %+v, want %+v", reloaded.appearance, want)
 	}
 }

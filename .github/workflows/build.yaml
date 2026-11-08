@@ -80,6 +80,11 @@ jobs:
           Compress-Archive -Path build/windows-arm64/* -DestinationPath build/NativeJet-windows-arm64.zip
       - uses: actions/upload-artifact@v7
         with:
-          path: build/NativeJet-windows-*.zip
+          path: build/NativeJet-windows-amd64.zip
+          archive: false
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/NativeJet-windows-arm64.zip
           archive: false
           if-no-files-found: error
