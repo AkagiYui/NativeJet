@@ -18,6 +18,7 @@ var (
 	brandIcon    = ui.MustParseSVG(brandIconSVG)
 	brandOutline = ui.MustParseSVG(brandOutlineSVG)
 	kernelIcon   = outlineIcon(`<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/>`)
+	geoDataIcon  = outlineIcon(`<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>`)
 	configIcon   = outlineIcon(`<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5M8 12h8m-8 4h6"/>`)
 	proxiesIcon  = outlineIcon(`<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>`)
 	linkIcon     = outlineIcon(`<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4m-6 4v-4h12v4"/>`)
@@ -47,6 +48,8 @@ func (a *App) view(c *ui.Context) {
 					a.configView(c)
 				case "内核":
 					a.kernelView(c)
+				case geoDataPage:
+					a.geoDataView(c)
 				case proxiesPage:
 					a.proxiesView(c)
 				case "连接":
@@ -85,6 +88,7 @@ func (a *App) sidebar(c *ui.Context) {
 			sectionLabel(c, "工作区")
 			a.navItem(c, configIcon, "配置")
 			a.navItem(c, kernelIcon, "内核")
+			a.navItem(c, geoDataIcon, geoDataPage)
 			a.navItem(c, proxiesIcon, proxiesPage)
 			a.navItem(c, linkIcon, "连接")
 			a.navItem(c, metricsIcon, metricsPage)

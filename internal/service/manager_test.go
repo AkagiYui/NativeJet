@@ -93,8 +93,22 @@ func fixtureCore() {
 		}
 		switch r.URL.Path {
 		case "/version", "/configs":
+			if cfg["test-geodata"] == true && r.URL.Path == "/configs" && r.Method == http.MethodGet {
+				fmt.Fprintln(w, `{"geodata-mode":true,"geox-url":{"mmdb":"https://example.com/mmdb","geo-ip":"https://example.com/ip","geo-site":"https://example.com/site","asn":"https://example.com/asn"}}`)
+				return
+			}
 			fmt.Fprintln(os.Stderr, "fixture: unexpected config or readiness request")
 			http.NotFound(w, r)
+		case "/configs/geo":
+			if cfg["test-geodata"] != true || r.Method != http.MethodPost {
+				http.NotFound(w, r)
+				return
+			}
+			if err := os.WriteFile(filepath.Join(arg("-d"), "GeoSite.dat"), []byte("fixture data"), 0600); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		case "/logs":
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			_ = json.NewEncoder(w).Encode(map[string]string{"type": "info", "payload": "fixture log stream"})

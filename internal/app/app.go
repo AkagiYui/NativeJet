@@ -66,6 +66,7 @@ type App struct {
 	connectionsError, proxiesError          error
 	metricsTab                              int
 	metrics                                 *metricsResult
+	geoData                                 *geoResult
 	nodeMetricsTable, ruleMetricsTable      metricTableState
 	providerMetricsTable                    metricTableState
 	connectionSort, kernelSort, logSort     ui.SortOrder
@@ -234,6 +235,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 		a.groups = nil
 		a.connectionsError, a.proxiesError = nil, nil
 		a.metrics = nil
+		a.geoData = nil
 	}
 	oldGlobal := a.snapshot.State.GlobalOverrideByID(a.loadedGlobal)
 	a.snapshot = snap
@@ -354,6 +356,8 @@ func (a *App) requestHelper(method string, params any, success string, done func
 			if err != nil {
 				a.problem = err.Error()
 				switch {
+				case method == "geo.update" && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+					a.problem = "已停止等待 GeoData 更新。内核可能仍在更新，请查看文件状态和内核日志。"
 				case errors.Is(err, context.Canceled):
 					a.problem = "操作已取消；请以已应用版本和后台日志为准。"
 				case errors.Is(err, context.DeadlineExceeded):
@@ -389,6 +393,7 @@ func (a *App) poll(ctx context.Context) {
 				client := a.client
 				version := a.snapshotVersion
 				page := a.page
+				inspectGeo := visible && page == geoDataPage
 				after := a.logAfter
 				paused := a.paused
 				go func() {
@@ -400,6 +405,11 @@ func (a *App) poll(ctx context.Context) {
 					var logs []model.Log
 					var groups []model.Proxy
 					var connectionsError, proxiesError error
+					var geo *geoResult
+					if inspectGeo && err == nil && snap.Status.GeoData {
+						geo = &geoResult{client: client}
+						geo.err = client.Call(probe, "geo.status", nil, &geo.data)
+					}
 					if visible && err == nil && snap.Status.Running {
 						switch page {
 						case "连接":
@@ -423,6 +433,7 @@ func (a *App) poll(ctx context.Context) {
 						defer a.updateTray()
 						if err != nil {
 							a.metrics = nil
+							a.geoData = nil
 							if a.connected {
 								a.connected = false
 								a.problem = err.Error()
@@ -435,6 +446,9 @@ func (a *App) poll(ctx context.Context) {
 						}
 						a.connected = true
 						a.accept(snap, false)
+						if geo != nil && (geo.err != nil || geo.data.PID == geoPID(snap.Status)) {
+							a.geoData = geo
+						}
 						a.maybeAutoStartCore()
 						if !visible {
 							return
@@ -473,6 +487,8 @@ func pendingMessage(method string) string {
 		return "正在删除全局覆盖"
 	case "kernel.download":
 		return "正在下载内核"
+	case "geo.update":
+		return "正在等待 Mihomo 更新 GeoData"
 	case "core.start", "core.restart":
 		return "正在启动内核"
 	case "core.stop":

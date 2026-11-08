@@ -227,6 +227,7 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		Interval int           `json:"interval"`
 		AssetID  int64         `json:"assetId"`
 		After    uint64        `json:"after"`
+		PID      int           `json:"pid"`
 		History  bool          `json:"history"`
 		Section  string        `json:"section"`
 		Profile  model.Profile `json:"profile"`
@@ -322,6 +323,10 @@ func (s *Server) dispatch(ctx context.Context, uid int, m *Manager, r ipc.Reques
 		return m.core.Traffic(args.History), nil
 	case "metrics":
 		return m.metrics(ctx, args.Section)
+	case "geo.status":
+		return m.geoStatus(ctx)
+	case "geo.update":
+		return nil, m.updateGeo(ctx, args.PID)
 	case "logs":
 		return m.Logs(args.After), nil
 	case "connections":

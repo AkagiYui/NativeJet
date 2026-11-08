@@ -138,6 +138,7 @@ type Status struct {
 	ActiveTUN         bool     `json:"activeTun"`
 	AuthorizedKernels []string `json:"authorizedKernels,omitempty"`
 	GlobalOverrides   bool     `json:"globalOverrides,omitempty"`
+	GeoData           bool     `json:"geoData,omitempty"`
 }
 
 type Snapshot struct {
