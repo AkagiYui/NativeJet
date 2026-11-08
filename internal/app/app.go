@@ -67,6 +67,8 @@ type App struct {
 	previewError                            error
 	connections                             *model.Connections
 	connectionsError, proxiesError          error
+	connectionSampleAt                      time.Time
+	connectionSpeeds                        map[string]connectionSpeed
 	metricsTab                              int
 	metrics                                 [len(metricSections)]*metricsResult
 	geoData                                 *geoResult
@@ -76,6 +78,9 @@ type App struct {
 	connectionSort, kernelSort, logSort     ui.SortOrder
 	connectionIndex                         int
 	connectionRows                          ui.ListState
+	connectionTable                         connectionTablePreferences
+	connectionTableSaveAt                   time.Time
+	connectionTableError                    string
 	kernelRows                              ui.ListState
 	kernelSelection                         int
 	logRows                                 ui.ListState
@@ -128,6 +133,7 @@ func New(o Options) (*App, error) {
 	a.spotlight.dismissedPath = filepath.Join(o.Data, "guide-dismissed")
 	a.loadAppearance()
 	a.loadStartup()
+	a.loadConnectionTablePreferences()
 	a.loginItem.available = manageLoginItem
 	if o.Development {
 		a.client.Requirement = developmentRequirement(o.Helper)

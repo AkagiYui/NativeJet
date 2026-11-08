@@ -27,8 +27,8 @@ func (a *App) resetWindowData() {
 	a.windowReads = nil
 	a.traffic = model.Traffic{}
 	a.trafficHistory = nil
-	a.connections, a.groups = nil, nil
-	a.connectionsError, a.proxiesError = nil, nil
+	a.acceptConnections(nil, nil, time.Time{})
+	a.groups, a.proxiesError = nil, nil
 	clear(a.metrics[:])
 	a.geoData = nil
 	a.resetServiceTests()
@@ -64,7 +64,7 @@ func (a *App) refreshWindowData(preload bool) {
 	if a.coreRunning() {
 		var connections model.Connections
 		a.readWindowData(windowQuery{method: "connections"}, interval(a.page == "连接"), nil, &connections, func(err error) {
-			a.connections, a.connectionsError = &connections, err
+			a.acceptConnections(&connections, err, time.Now())
 		})
 		var groups []model.Proxy
 		a.readWindowData(windowQuery{method: "proxies"}, interval(a.page == proxiesPage), nil, &groups, func(err error) {

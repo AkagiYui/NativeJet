@@ -169,15 +169,16 @@ type Log struct {
 type Connection struct {
 	ID       string `json:"id"`
 	Metadata struct {
-		Network         string `json:"network"`
-		Type            string `json:"type"`
-		Host            string `json:"host"`
-		SourceIP        string `json:"sourceIP"`
-		SourcePort      string `json:"sourcePort"`
-		DestinationIP   string `json:"destinationIP"`
-		DestinationPort string `json:"destinationPort"`
-		Process         string `json:"process"`
-		ProcessPath     string `json:"processPath"`
+		Network           string `json:"network"`
+		Type              string `json:"type"`
+		Host              string `json:"host"`
+		SourceIP          string `json:"sourceIP"`
+		SourcePort        string `json:"sourcePort"`
+		DestinationIP     string `json:"destinationIP"`
+		DestinationPort   string `json:"destinationPort"`
+		RemoteDestination string `json:"remoteDestination,omitempty"`
+		Process           string `json:"process"`
+		ProcessPath       string `json:"processPath"`
 	} `json:"metadata"`
 	Upload      int64    `json:"upload"`
 	Download    int64    `json:"download"`

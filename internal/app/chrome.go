@@ -71,6 +71,7 @@ func (a *App) view(c *ui.Context) {
 		a.statusBar(c)
 	})
 	a.spotlight.view(c)
+	a.updateConnectionTablePreferences(c)
 }
 
 func (a *App) sidebar(c *ui.Context) {

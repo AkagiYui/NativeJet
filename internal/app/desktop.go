@@ -68,7 +68,10 @@ func (a *App) start() {
 		// Keep the app reachable if the menu bar item couldn't be created.
 		mygo.App.Dock.Show()
 	}
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.quitting = true })
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		a.flushConnectionTablePreferences()
+		a.quitting = true
+	})
 	mygo.App.OnActivate(func(hasVisibleWindows bool) {
 		if !hasVisibleWindows {
 			a.showWindow()
@@ -114,6 +117,7 @@ func (a *App) start() {
 	a.win.OnShow(refresh)
 	a.win.OnRestore(refresh)
 	a.win.OnClose(func(e *mygo.CloseEvent) {
+		a.flushConnectionTablePreferences()
 		// Keep the existing window and its drafts when there is a tray to reopen it.
 		if a.tray != nil && !a.quitting {
 			e.PreventDefault()

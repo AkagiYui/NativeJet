@@ -114,21 +114,6 @@ func kernelVersionOrder(version string) string {
 	return key.String()
 }
 
-func connectionSortKey(conn model.Connection, column int) tableSortKey {
-	switch column {
-	case 0:
-		host := connectionHost(conn)
-		return tableSortKey{text: host, missing: host == ""}
-	case 1:
-		process := connectionProcess(conn)
-		return tableSortKey{text: process, missing: process == ""}
-	case 2:
-		return tableSortKey{text: strings.Join(conn.Chains, " → "), missing: len(conn.Chains) == 0}
-	default:
-		return tableSortKey{number: uint64(max(0, conn.Download))}
-	}
-}
-
 func logSortKey(entry model.Log, column int) tableSortKey {
 	switch column {
 	case 0:

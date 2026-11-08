@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -350,6 +349,7 @@ func (a *App) connectionsView(c *ui.Context) {
 		if a.coreRunning() && a.connections != nil && a.connectionsError == nil {
 			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
 		}
+		a.connectionColumnSettings(c)
 	})
 	if !a.connected {
 		emptyState(c, linkIcon, "后台服务未连接", "连接后台服务后即可读取活动连接。", nil)
@@ -368,7 +368,7 @@ func (a *App) connectionsView(c *ui.Context) {
 		return
 	}
 	commandRow(c, func() {
-		ui.TextInput(c, &a.search).Placeholder("搜索目标、进程或策略").Grow(1).MinWidth(0).Label("搜索连接")
+		ui.TextInput(c, &a.search).Placeholder("搜索主机、地址、进程、规则或策略").Grow(1).MinWidth(0).Label("搜索连接")
 		if action(c, nil, "关闭全部", false).Disabled(a.busy).Clicked() {
 			a.request("connections.closeAll", nil, "连接已关闭", nil)
 		}
@@ -376,7 +376,7 @@ func (a *App) connectionsView(c *ui.Context) {
 	rows := []model.Connection{}
 	query := strings.ToLower(a.search)
 	for _, conn := range a.connections.Connections {
-		if strings.Contains(strings.ToLower(conn.Metadata.Host+" "+conn.Metadata.Process+" "+conn.Metadata.DestinationIP+" "+strings.Join(conn.Chains, " ")), query) {
+		if query == "" || connectionMatches(conn, query) {
 			rows = append(rows, conn)
 		}
 	}
@@ -384,25 +384,25 @@ func (a *App) connectionsView(c *ui.Context) {
 		if query == "" {
 			emptyState(c, linkIcon, "暂无活动连接", "", nil)
 		} else {
-			emptyState(c, linkIcon, "没有匹配的连接", "试试其他目标、进程或策略名称。", nil)
+			emptyState(c, linkIcon, "没有匹配的连接", "试试其他地址、进程、规则或策略名称。", nil)
 		}
 		return
 	}
 	ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-		columns := []ui.TableColumn{{Title: "目标", MinWidth: 105}, {Title: "进程", MinWidth: 68}, {Title: "策略", MinWidth: 80}, {Title: "下载", Width: 86, Align: ui.End}}
-		rows := sortableTableRows(rows, columns, a.connectionSort, connectionSortKey)
-		followTableSelection(&a.connectionRows, rows, func(conn model.Connection) string { return conn.ID })
-		workspaceTable(c, &a.connectionRows, columns, len(rows), "活动连接列表", func(row, col int) {
-			conn := rows[row]
-			text := connectionHost(conn)
-			switch col {
-			case 1:
-				text = connectionProcess(conn)
-			case 2:
-				text = strings.Join(conn.Chains, " → ")
-			case 3:
-				text = bytesString(conn.Download)
+		columns := connectionColumns
+		rows := sortableTableRows(rows, columns[:], a.connectionSort, a.connectionSortKey)
+		var visible []ui.TableColumn
+		var visibleIndices []int
+		for i, column := range columns {
+			if !a.connectionTable.Hidden[column.ID] {
+				column.MaxWidth = connectionColumnMaxWidth
+				visible = append(visible, column)
+				visibleIndices = append(visibleIndices, i)
 			}
+		}
+		followTableSelection(&a.connectionRows, rows, func(conn model.Connection) string { return conn.ID })
+		workspaceTable(c, &a.connectionRows, visible, len(rows), "活动连接列表", func(row, col int) {
+			text := a.connectionCellText(rows[row], visibleIndices[col])
 			ui.Text(c, text).FontSize(12).SingleLine().Tooltip(text)
 		})
 		var selected *model.Connection
@@ -421,32 +421,16 @@ func (a *App) connectionsView(c *ui.Context) {
 			conn := *selected
 			detailScroll(c, func() {
 				ui.Text(c, connectionHost(conn)).FontSize(14).FontWeight(600).Selectable()
-				property(c, "目标地址", conn.Metadata.DestinationIP+":"+conn.Metadata.DestinationPort)
-				property(c, "协议 / 类型", conn.Metadata.Network+" · "+conn.Metadata.Type)
-				property(c, "匹配规则", strings.TrimSuffix(conn.Rule+" · "+conn.RulePayload, " · "))
+				property(c, "源地址", connectionAddress(conn.Metadata.SourceIP, conn.Metadata.SourcePort))
+				property(c, "目标地址", connectionDestination(conn))
+				property(c, "类型 / 协议", connectionType(conn))
+				property(c, "匹配规则", connectionRule(conn))
 				property(c, "转发链", strings.Join(conn.Chains, " → "))
 				ui.Divider(c)
 				property(c, "上传 / 下载", bytesString(conn.Upload)+" / "+bytesString(conn.Download))
 			})
 		})
 	})
-}
-
-func connectionHost(conn model.Connection) string {
-	if conn.Metadata.Host != "" {
-		return conn.Metadata.Host
-	}
-	return conn.Metadata.DestinationIP
-}
-
-func connectionProcess(conn model.Connection) string {
-	if conn.Metadata.Process != "" {
-		return conn.Metadata.Process
-	}
-	if conn.Metadata.ProcessPath != "" {
-		return filepath.Base(conn.Metadata.ProcessPath)
-	}
-	return ""
 }
 
 func (a *App) logsView(c *ui.Context) {
