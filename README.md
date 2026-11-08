@@ -99,6 +99,13 @@ NATIVEJET_TEAM_ID='YOURTEAMID' make build
 NATIVEJET_NOTARY_PROFILE='your-keychain-profile' bash scripts/notarize.sh
 ```
 
+### GitHub Actions 构建
+
+推送到 `master`、提交以 `master` 为目标的 PR、推送 `v*` 标签，或在 Actions 中手动运行
+「Build NativeJet」，都会构建并检查 Apple Silicon 和 Intel 两种版本。构建成功后可在该次运行的
+Artifacts 下载 `NativeJet-macos-arm64.zip` 或 `NativeJet-macos-amd64.zip`，解压后得到包含
+后台 helper 的 `NativeJet.app`。CI 产物使用 ad-hoc 签名，供测试使用。
+
 ## 配置语义
 
 固定优先级：

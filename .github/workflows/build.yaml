@@ -1,0 +1,54 @@
+name: Build NativeJet
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: amd64
+            runner: macos-15-intel
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          # The build scripts use their own caches under .cache/.
+          cache: false
+
+      - name: Build and sign the app bundle
+        run: make build
+
+      - name: Run tests and vet
+        run: make check
+
+      - name: Package the app bundle
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: ditto -c -k --keepParent build/NativeJet.app "build/NativeJet-macos-$ARCH.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/NativeJet-macos-${{ matrix.arch }}.zip
+          archive: false
+          if-no-files-found: error
