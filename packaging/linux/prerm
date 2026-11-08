@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+if [ "$1" = remove ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl disable --now dev.nativejet.helper.service
+    else
+        systemctl --root=/ disable dev.nativejet.helper.service
+    fi
+fi

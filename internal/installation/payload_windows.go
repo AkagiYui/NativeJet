@@ -10,6 +10,7 @@ import (
 )
 
 const installedExecutableMode = 0700
+const payloadOpenFlags = os.O_RDONLY
 
 func prepareIdentity(_ string, payload *Payload) error {
 	sid, err := platform.CurrentSID()

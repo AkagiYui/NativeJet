@@ -8,6 +8,7 @@ import (
 )
 
 const installedExecutableMode = 0555
+const payloadOpenFlags = os.O_RDONLY
 
 func prepareIdentity(path string, payload *Payload) error {
 	requirement, err := platform.SigningRequirement(path)

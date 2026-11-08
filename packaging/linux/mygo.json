@@ -1,0 +1,15 @@
+{
+  "name": "NativeJet",
+  "identifier": "dev.nativejet.app",
+  "version": "0.2.7",
+  "main": "../../cmd/nativejet",
+  "icon": "../windows/NativeJet.png",
+  "urlSchemes": ["clash"],
+  "linux": {
+    "webview": false,
+    "command": "nativejet",
+    "comment": "Native Mihomo configuration and core manager",
+    "categories": ["Network"],
+    "depends": ["systemd", "pkexec", "libglib2.0-bin", "libayatana-appindicator3-1"]
+  }
+}

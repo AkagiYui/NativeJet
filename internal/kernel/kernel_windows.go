@@ -18,6 +18,7 @@ import (
 )
 
 const Executable = "mihomo.exe"
+const kernelOpenFlags = os.O_RDONLY
 
 var releaseVersion = regexp.MustCompile(`-v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?\.exe$`)
 

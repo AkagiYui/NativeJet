@@ -147,3 +147,12 @@ TUN 路由已存在时明确显示冲突网段、关闭其他 TUN 后重试的�
 - Windows 的 IPC、安装清单篡改和 ZIP 资源筛选专项测试通过。Windows x64 与 ARM64 ZIP 均通过构建和归档校验。
 
 Windows 11 和 ARM64 的运行验证，以及交互式 UAC 授权和整机默认路由场景，需要相应测试环境。
+
+## Linux ARM64（2026-11-08）
+
+在隔离的 Debian 12 ARM64 容器内运行真实 systemd 252，使用经 SHA-256 核验的官方 Mihomo v1.19.33。
+
+- ARM64 Go 测试、Xvfb 下的打包窗口启动、普通权限 helper 自动启动及非 TUN 内核运行通过。
+- CLI 测试覆盖 systemd 服务安装、配置迁移、未授权 UID 拒绝、内核 SHA-256 授权、软件包升级、服务卸载和配置保留。
+- 在无外网的测试网络中，TUN 转发了 TCP/HTTP、UDP 和 DNS。停止内核、以及强制终止 helper 后由 systemd 重启服务，均移除了 TUN 设备和测试路由规则，默认路由与系统 DNS 保持原值。
+- x64 和 ARM64 的 `.deb` 均完成构建。x64 运行、Wayland 桌面和交互式 polkit 弹窗尚未验证。

@@ -23,6 +23,7 @@ type Server struct {
 	Socket, Data, Inbox, TeamID string
 	PeerRequirement             string
 	OwnerSID                    string
+	OwnerUID, OwnerGID          int
 	ApprovedKernels             map[string]bool
 	Ready                       chan struct{}
 	stop                        context.CancelFunc

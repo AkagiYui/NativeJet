@@ -1,7 +1,7 @@
 # NativeJet
 
-macOS 和 Windows 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，界面没有 WebView。
-安装包仅包含 App 与 helper，不附带、不链接代理内核。
+macOS、Windows 和 Linux 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，界面没有 WebView。
+安装包包含 App 和后台 helper，不附带、不链接代理内核。
 
 ## 功能
 
@@ -14,7 +14,7 @@ macOS 和 Windows 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，�
 - 内核启动失败时显示本次进程报错。内核运行时产生的错误也可在日志页查看。
 - 配置历史、恢复、已应用配置与当前预览的原生差异查看器。
 
-支持 macOS 13+ 和 Windows 10/11（x64、ARM64）。Windows 使用独立的系统后台服务运行 TUN。
+支持 macOS 13+、Windows 10/11 和 Linux（x64、ARM64）。Linux 提供面向 Ubuntu 24.04 等使用 systemd 的 Debian 系发行版的安装包。
 
 ## Windows 构建与使用
 
@@ -33,6 +33,24 @@ bash scripts/build-windows.sh arm64
 ```
 
 输出在 `build/windows-amd64` 和 `build/windows-arm64`。Windows 上可以执行 `go test ./...`、`go vet ./...`，以及 `nativejetctl.exe -installed snapshot` 检查已安装服务。GitHub Actions 为两个架构生成 ZIP。
+
+## Linux 构建与使用
+
+1. 用 `sudo apt install ./NativeJet-linux-amd64.deb` 安装对应架构的包，ARM64 使用 `NativeJet-linux-arm64.deb`。从应用菜单或终端运行 `nativejet`。App 使用 GTK 3。
+2. 在「内核」下载官方 Linux 内核，或将具有执行权限的同架构 Mihomo ELF 文件放入内核目录并扫描、选用。
+3. 在「设置」点击「安装并授权后台服务」，通过桌面的 polkit 管理员提示。App 在授权前自动启动包内 helper，授权后切换至 `dev.nativejet.helper.service`，并迁移现有配置。内核替换后按提示授权新的 SHA-256。
+4. 导入配置并应用，再启动内核。默认覆盖启用 TUN，使用 `external-controller-unix: mihomo.sock`。系统需提供 `/dev/net/tun`。关闭 TUN 后，同一个 App 可直接使用以登录用户权限运行的 helper。
+
+系统服务仅允许授权的本机 UID 连接，配置保存在 `/var/lib/nativejet`，GUI 偏好保存在用户的 XDG 配置目录。通过 App 卸载服务会停用 systemd 单元并保留配置。没有可用托盘的桌面环境会正常显示和关闭窗口。
+
+需要 Go 1.27.3+、`dpkg-deb` 和 OpenSSL。运行以下命令可构建两个架构，GitHub Actions 也会生成同名安装包。
+
+```sh
+bash scripts/build-linux.sh amd64
+bash scripts/build-linux.sh arm64
+```
+
+输出为 `build/NativeJet-linux-amd64.deb` 和 `build/NativeJet-linux-arm64.deb`。系统服务可用 `nativejetctl -installed snapshot` 检查，日志可用 `journalctl -u dev.nativejet.helper.service` 查看。
 
 ## macOS 构建与运行
 

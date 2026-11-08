@@ -197,6 +197,9 @@ func readPayload(directory, digest string) (Payload, *os.Root, error) {
 		return payload, nil, err
 	}
 	fail := func(e error) (Payload, *os.Root, error) { root.Close(); return Payload{}, nil, e }
+	if opened, err := root.Stat("."); err != nil || !os.SameFile(info, opened) {
+		return fail(errors.New("迁移目录已改变"))
+	}
 	data, err := readRegular(root, "payload.json", 24<<20)
 	if err != nil {
 		return fail(err)
@@ -242,11 +245,14 @@ func readRegular(root *os.Root, path string, limit int64) ([]byte, error) {
 	if !info.Mode().IsRegular() || info.Size() > limit {
 		return nil, errors.New("拒绝非普通文件或超限文件")
 	}
-	f, err := root.Open(path)
+	f, err := root.OpenFile(path, payloadOpenFlags, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if opened, err := f.Stat(); err != nil || !os.SameFile(info, opened) || opened.Size() > limit {
+		return nil, errors.New("迁移文件已改变或超限")
+	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if int64(len(data)) > limit {
 		return nil, errors.New("文件过大")

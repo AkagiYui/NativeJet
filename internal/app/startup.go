@@ -153,7 +153,11 @@ func (a *App) startupSettings(c *ui.Context) {
 		if startupSwitch(c, "启动时自动启动内核", "下次启动 NativeJet 时，连接后台服务后启动内核。需要已应用的配置及所需授权。", &prefs.AutoStartCore, false) {
 			a.saveStartup(prefs)
 		}
-		if startupSwitch(c, "启动时不显示窗口", "下次启动时只显示"+trayName+"图标，可从"+trayName+"打开主窗口。", &prefs.HideWindow, false) {
+		hideDescription := "下次启动时只显示" + trayName + "图标，可从" + trayName + "打开主窗口。"
+		if platformName == "Linux" && a.tray == nil {
+			hideDescription = "仅在桌面提供系统托盘时生效。当前桌面启动时会显示窗口。"
+		}
+		if startupSwitch(c, "启动时不显示窗口", hideDescription, &prefs.HideWindow, false) {
 			a.saveStartup(prefs)
 		}
 		if a.startupError != "" {

@@ -1,15 +1,11 @@
 package kernel
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"debug/macho"
 	"errors"
-	"io"
 	"nativejet/internal/model"
 	"nativejet/internal/platform"
-	"nativejet/internal/storage"
 	"os"
 	"os/exec"
 	"runtime"
@@ -18,6 +14,7 @@ import (
 )
 
 const Executable = "mihomo"
+const kernelOpenFlags = os.O_RDONLY
 
 func (m *Manager) probe(ctx context.Context, info os.FileInfo, _ *os.File, item *model.Kernel) {
 	path := item.Path
@@ -80,21 +77,3 @@ func validateExecutable(path string) error {
 func releaseAsset(name string) bool {
 	return strings.HasPrefix(name, "mihomo-darwin-"+runtime.GOARCH) && strings.HasSuffix(name, ".gz") && !strings.Contains(name, "alpha") && (runtime.GOARCH != "amd64" || strings.Contains(name, "compatible"))
 }
-func unpack(compressed []byte, name string) ([]byte, string, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		return nil, "", err
-	}
-	defer reader.Close()
-	binary, err := io.ReadAll(io.LimitReader(reader, MaxBinary+1))
-	if err != nil {
-		return nil, "", err
-	}
-	if len(binary) > MaxBinary {
-		return nil, "", errors.New("解压后的内核过大")
-	}
-
-	return binary, strings.TrimSuffix(name, ".gz"), nil
-}
-func (m *Manager) setDownloadOwner(f *os.File) error { return f.Chown(m.UID, m.GID) }
-func writeExecutable(path string, data []byte) error { return storage.Atomic(path, data, 0555) }

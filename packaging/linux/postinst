@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+if [ "$1" = configure ] && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+    if [ -f /var/lib/nativejet/service.json ] &&
+        { systemctl is-active --quiet dev.nativejet.helper.service ||
+          systemctl is-enabled --quiet dev.nativejet.helper.service; }; then
+        systemctl restart dev.nativejet.helper.service
+    fi
+fi

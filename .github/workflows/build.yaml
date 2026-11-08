@@ -88,3 +88,70 @@ jobs:
           path: build/NativeJet-windows-arm64.zip
           archive: false
           if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Run Linux tests and vet
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Build Linux package
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: bash scripts/build-linux.sh "$ARCH"
+      - name: Install and smoke-test package
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "./build/NativeJet-linux-$ARCH.deb" xvfb xauth dbus-x11 xdotool libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+          systemd-analyze verify /usr/lib/systemd/system/dev.nativejet.helper.service
+          dbus-run-session -- xvfb-run -a bash -seuo pipefail <<'BASH'
+            scratch=$(mktemp -d)
+            export XDG_CONFIG_HOME="$scratch/config" XDG_RUNTIME_DIR="$scratch/run"
+            mkdir -m 700 "$XDG_RUNTIME_DIR"
+            nativejet >"$scratch/app.log" 2>&1 &
+            app=$!
+            cleanup() {
+              rc=$?
+              if [ "$rc" -ne 0 ]; then cat "$scratch/app.log"; fi
+              if [ -n "${socket:-}" ]; then nativejetctl -socket "$socket" service.shutdown >/dev/null || true; fi
+              kill "$app" 2>/dev/null || true
+              wait "$app" 2>/dev/null || true
+              rm -rf "$scratch"
+            }
+            trap cleanup EXIT
+            for i in $(seq 1 100); do
+              socket=$(find "$XDG_RUNTIME_DIR" -type s -path "*/nativejet/*.sock" -print -quit)
+              if [ -n "$socket" ] && xdotool search --onlyvisible --name "^NativeJet$" >/dev/null &&
+                  nativejetctl -socket "$socket" snapshot >"$scratch/snapshot.json"; then
+                python3 -c "import json,sys; assert json.load(sys.stdin)[\"status\"][\"privileged\"] is False" <"$scratch/snapshot.json"
+                exit 0
+              fi
+              kill -0 "$app"
+              sleep 0.2
+            done
+            exit 1
+          BASH
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/NativeJet-linux-${{ matrix.arch }}.deb
+          archive: false
+          if-no-files-found: error

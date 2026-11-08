@@ -17,7 +17,7 @@ var menuBarOutlineIcon []byte
 
 func (a *App) Run() error {
 	mygo.App.SetName("NativeJet")
-	if platformName == "Windows" {
+	if platformName == "Windows" || platformName == "Linux" {
 		if !mygo.App.RequestSingleInstanceLock() {
 			return nil
 		}
@@ -45,23 +45,25 @@ func (a *App) start() {
 			a.win.Invalidate()
 		},
 	}
-	tray, err := mygo.NewTray(mygo.TrayOptions{
-		ID:             "dev.nativejet.app.menu-bar",
-		Icon:           menuBarOutlineIcon,
-		IconIsTemplate: true,
-		Menu: mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "打开 NativeJet", Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
-			a.trayCoreItem,
-			mygo.Separator(),
-			{Label: "退出 NativeJet", Role: mygo.RoleQuit},
-		}),
-	})
-	if err != nil {
-		log.Printf("Could not create the NativeJet tray item: %v", err)
+	if desktopTrayAvailable() {
+		tray, err := mygo.NewTray(mygo.TrayOptions{
+			ID:             "dev.nativejet.app.menu-bar",
+			Icon:           menuBarOutlineIcon,
+			IconIsTemplate: true,
+			Menu: mygo.NewMenu([]*mygo.MenuItem{
+				{Label: "打开 NativeJet", Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
+				a.trayCoreItem,
+				mygo.Separator(),
+				{Label: "退出 NativeJet", Role: mygo.RoleQuit},
+			}),
+		})
+		if err != nil {
+			log.Printf("Could not create the NativeJet tray item: %v", err)
+		}
+		a.tray = tray
 	}
-	a.tray = tray
 	a.updateTray()
-	hidden := a.startup.HideWindow && tray != nil
+	hidden := a.startup.HideWindow && a.tray != nil
 	if platformName == "macOS" && a.startup.HideWindow && !hidden {
 		// Keep the app reachable if the menu bar item couldn't be created.
 		mygo.App.Dock.Show()

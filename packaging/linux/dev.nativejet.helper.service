@@ -1,0 +1,25 @@
+[Unit]
+Description=NativeJet background service
+ConditionPathExists=/var/lib/nativejet/service.json
+
+[Service]
+Type=notify
+ExecStart=/opt/nativejet/nativejet-helper --installed
+RuntimeDirectory=nativejet
+RuntimeDirectoryMode=0755
+UMask=0077
+Restart=on-failure
+RestartSec=1s
+TimeoutStartSec=25s
+TimeoutStopSec=25s
+# Send SIGTERM to Mihomo even if the helper exited unexpectedly.
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/nativejet
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE CAP_CHOWN
+
+[Install]
+WantedBy=multi-user.target

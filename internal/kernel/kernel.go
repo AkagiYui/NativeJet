@@ -62,8 +62,13 @@ func (m *Manager) Scan(ctx context.Context) ([]model.Kernel, error) {
 			continue
 		}
 		item := model.Kernel{Name: entry.Name(), Path: path, Arch: runtime.GOARCH}
-		f, err := root.Open(entry.Name())
+		f, err := root.OpenFile(entry.Name(), kernelOpenFlags, 0)
 		if err != nil {
+			continue
+		}
+		info, err = f.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() > MaxBinary {
+			_ = f.Close()
 			continue
 		}
 		hash, err := hashBinary(f)
@@ -124,7 +129,7 @@ func (m *Manager) Install(ctx context.Context, id string) (model.Kernel, error) 
 			return item, err
 		}
 		defer root.Close()
-		f, err := root.Open(item.Name)
+		f, err := root.OpenFile(item.Name, kernelOpenFlags, 0)
 		if err != nil {
 			return item, err
 		}
