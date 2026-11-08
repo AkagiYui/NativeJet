@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -21,7 +20,6 @@ import (
 	"nativejet/internal/installation"
 	"nativejet/internal/kernel"
 	"nativejet/internal/model"
-	"nativejet/internal/platform"
 	"nativejet/internal/storage"
 )
 
@@ -33,7 +31,7 @@ type Manager struct {
 	core            *core.Supervisor
 	kernel          *kernel.Manager
 	kernels         []model.Kernel
-	uid, gid        int
+	privileged      bool
 	runtime         string
 	lastError       string
 	approvedKernels map[string]bool
@@ -41,6 +39,7 @@ type Manager struct {
 type Options struct {
 	Data, Inbox     string
 	UID, GID        int
+	Privileged      bool
 	ApprovedKernels map[string]bool
 }
 
@@ -53,22 +52,14 @@ func New(o Options) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	if os.Geteuid() == 0 && o.UID != 0 {
-		for _, command := range [][]string{{"/bin/mkdir", "-p", o.Inbox}, {"/bin/chmod", "700", o.Inbox}} {
-			cmd := exec.Command(command[0], command[1:]...)
-			cmd.SysProcAttr = platform.Credentials(o.UID, o.GID)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				return nil, fmt.Errorf("准备内核目录: %s: %w", out, err)
-			}
-		}
-	} else if err = os.MkdirAll(o.Inbox, 0700); err != nil {
+	if err = prepareInbox(o); err != nil {
 		return nil, err
 	}
 	runtimeDir := storage.RuntimeDirectory(o.Data)
 	if _, err := storage.New(runtimeDir); err != nil {
 		return nil, err
 	}
-	m := &Manager{state: state, store: store, uid: o.UID, gid: o.GID, runtime: runtimeDir, kernels: []model.Kernel{}, core: &core.Supervisor{}}
+	m := &Manager{state: state, store: store, privileged: servicePrivileged(o), runtime: runtimeDir, kernels: []model.Kernel{}, core: &core.Supervisor{}}
 	m.approvedKernels = o.ApprovedKernels
 	m.kernel = &kernel.Manager{Inbox: o.Inbox, Installed: store.Path("cores"), UID: o.UID, GID: o.GID}
 	if state.Process != nil {
@@ -129,7 +120,7 @@ func (m *Manager) Snapshot() model.Snapshot {
 	kernels := append([]model.Kernel{}, m.kernels...)
 	lastError := m.lastError
 	m.mu.RUnlock()
-	status := model.Status{Protocol: model.ProtocolVersion, Privileged: os.Geteuid() == 0, Running: m.core.Running(), ActiveRevision: s.ActiveRevision, ActiveProfile: s.ActiveProfile, Error: lastError, KernelDirectory: m.kernel.Inbox}
+	status := model.Status{Protocol: model.ProtocolVersion, Privileged: m.privileged, Running: m.core.Running(), ActiveRevision: s.ActiveRevision, ActiveProfile: s.ActiveProfile, Error: lastError, KernelDirectory: m.kernel.Inbox}
 	status.RuntimeDirectory = m.runtime
 	status.GlobalOverrides = true
 	status.GeoData = true
@@ -626,8 +617,8 @@ func (m *Manager) rollback(s model.State) error {
 	return nil
 }
 func (m *Manager) requireTUNPrivilege(values map[string]any) error {
-	if config.BoolAt(values, "tun.enable") && os.Geteuid() != 0 {
-		return errors.New("TUN 需要已授权的 macOS 后台服务，请在“后台服务”中完成授权")
+	if config.BoolAt(values, "tun.enable") && !m.privileged {
+		return errors.New("TUN 需要已授权的系统后台服务，请在“后台服务”中完成授权")
 	}
 	return nil
 }

@@ -4,29 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"syscall"
+	"runtime"
 	"testing"
 
 	"nativejet/internal/model"
 )
-
-func TestAtomicHonorsExplicitModeWithPrivateUmask(t *testing.T) {
-	old := syscall.Umask(0077)
-	defer syscall.Umask(old)
-	for _, mode := range []os.FileMode{0600, 0644, 0755} {
-		path := filepath.Join(t.TempDir(), "file")
-		if err := Atomic(path, []byte("test"), mode); err != nil {
-			t.Fatal(err)
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().Perm() != mode {
-			t.Fatalf("umask changed explicit mode: got %o want %o", info.Mode().Perm(), mode)
-		}
-	}
-}
 
 func TestStateRoundTripAndCorruption(t *testing.T) {
 	dir := t.TempDir()
@@ -49,7 +31,7 @@ func TestStateRoundTripAndCorruption(t *testing.T) {
 		t.Fatal("state did not round trip")
 	}
 	info, _ := os.Stat(s.Path("state.json"))
-	if info.Mode().Perm() != 0600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("state contains credentials and must be private")
 	}
 	if err = os.WriteFile(s.Path("state.json"), []byte("broken"), 0600); err != nil {

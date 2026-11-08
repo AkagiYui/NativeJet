@@ -3,7 +3,6 @@ package buildinfo
 const AppID = "dev.nativejet.app"
 const HelperID = "dev.nativejet.helper"
 const ServicePlist = HelperID + ".plist"
-const Socket = "/var/run/dev.nativejet.helper.sock"
 
 var Version = "0.2.7"
 

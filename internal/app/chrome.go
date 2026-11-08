@@ -196,7 +196,7 @@ func (a *App) statusBar(c *ui.Context) {
 				a.openLogs()
 			}
 		}
-		ui.Text(c.Key("version"), "macOS · "+buildinfo.Version).FontSize(11).TextColor(p.TextMuted).SingleLine().Shrink(0)
+		ui.Text(c.Key("version"), platformName+" · "+buildinfo.Version).FontSize(11).TextColor(p.TextMuted).SingleLine().Shrink(0)
 	})
 }
 
@@ -211,7 +211,7 @@ func workspaceHeader(c *ui.Context, icon *ui.SVG, title string, actions func()) 
 	p := palette(c)
 	bar := c.TitleBar()
 	ui.Row(c).FillWidth().Height(max(toolbarHeight, bar.Height)).Shrink(0).
-		Padding(0, max(12, bar.Right), 0, 16).AlignItems(ui.Center).Gap(8).
+		Padding(0, bar.Right+12, 0, 16).AlignItems(ui.Center).Gap(8).
 		BorderWidth(0, 0, 1, 0).BorderColor(p.line).DragWindow().Children(func() {
 		ui.Icon(c, icon).Size(16, 16).TextColor(p.TextMuted)
 		ui.Text(c, title).FontSize(15).FontWeight(600).SingleLine()

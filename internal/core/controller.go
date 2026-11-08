@@ -9,26 +9,20 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
-
-	"nativejet/internal/platform"
 )
 
 // Controller describes how to reach a listener from the effective YAML.
 type Controller struct {
 	address, baseURL, secret string
-	unix                     bool
+	local                    bool
 	problem                  string
 }
 
 func ConfiguredController(values map[string]any, home string) Controller {
-	if socket, _ := values["external-controller-unix"].(string); socket != "" {
-		if !filepath.IsAbs(socket) {
-			socket = filepath.Join(home, socket)
-		}
-		return Controller{address: socket, baseURL: "http://core", unix: true}
+	if controller, ok := localController(values, home); ok {
+		return controller
 	}
 	field, scheme := "external-controller", "http"
 	address, _ := values[field].(string)
@@ -56,7 +50,7 @@ func ConfiguredController(values map[string]any, home string) Controller {
 
 func (c Controller) occupied(ctx context.Context) bool {
 	// Avoid sending controller requests to a TCP listener predating this core.
-	if c.address == "" || c.unix {
+	if c.address == "" || c.local {
 		return false
 	}
 	dialer := net.Dialer{Timeout: 250 * time.Millisecond}
@@ -85,22 +79,9 @@ func (c Controller) request(ctx context.Context, pid int, method, path string, b
 	}
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	transport := &http.Transport{DialContext: dialer.DialContext, DisableKeepAlives: true}
-	if c.unix {
+	if c.local {
 		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, "unix", c.address)
-			if err != nil {
-				return nil, err
-			}
-			raw, err := conn.(*net.UnixConn).SyscallConn()
-			if err == nil {
-				var peer int
-				err = raw.Control(func(fd uintptr) { peer, _ = platform.PeerPID(fd) })
-				if err == nil && peer == pid {
-					return conn, nil
-				}
-			}
-			_ = conn.Close()
-			return nil, errors.New("配置的 Unix socket 未连接到当前内核")
+			return dialLocalController(ctx, c.address, pid)
 		}
 	}
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {

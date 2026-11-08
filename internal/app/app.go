@@ -4,8 +4,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -104,7 +102,7 @@ func New(o Options) (*App, error) {
 	// The system launches the app with its default arguments on login.
 	manageLoginItem := o.PreferInstalled && o.Helper == ""
 	if o.Data == "" {
-		base, err := os.UserConfigDir()
+		base, err := userConfigDir()
 		if err != nil {
 			return nil, err
 		}
@@ -115,27 +113,26 @@ func New(o Options) (*App, error) {
 		if err := os.MkdirAll(o.Data, 0700); err != nil {
 			return nil, err
 		}
-		socket = filepath.Join(o.Data, "helper.sock")
-		if len(socket) > 100 {
-			sum := sha256.Sum256([]byte(o.Data))
-			socket = filepath.Join(os.TempDir(), "nativejet-ui-"+hex.EncodeToString(sum[:6])+".sock")
-		}
+		socket = developmentEndpoint(o.Data)
 	}
 	if o.Helper == "" {
 		exe, err := os.Executable()
 		if err != nil {
 			return nil, err
 		}
-		o.Helper = filepath.Join(filepath.Dir(filepath.Dir(exe)), "Library/LaunchServices/nativejet-helper")
+		o.Helper = bundledHelper(exe)
 	}
 	a := &App{data: o.Data, helperPath: o.Helper, client: &ipc.Client{Socket: socket, Development: o.Development, TeamID: buildinfo.TeamID}, page: "配置", logLevel: "全部", logSource: "全部来源", logSelection: -1}
 	a.loadAppearance()
 	a.loadStartup()
 	a.loginItem.available = manageLoginItem
+	if o.Development {
+		a.client.Requirement = developmentRequirement(o.Helper)
+	}
 	a.developmentClient = a.client
 	if o.PreferInstalled {
 		a.page = settingsPage
-		if registration, err := installation.LoadRegistration(); err == nil {
+		if registration, err := appRegistration(); err == nil {
 			a.registration = &registration
 			a.client = installedClient(registration)
 			a.page = "配置"
@@ -221,6 +218,7 @@ func (a *App) connectSnapshot(ctx context.Context, client *ipc.Client) (model.Sn
 		return snap, err
 	}
 	cmd := exec.Command(a.helperPath, "--development", "--socket", client.Socket, "--data-dir", filepath.Join(a.data, "development"), "--kernel-dir", filepath.Join(a.data, "kernels"))
+	configureHelperCommand(cmd)
 	cmd.Stdout = logfile
 	cmd.Stderr = logfile
 	if err = cmd.Start(); err != nil {

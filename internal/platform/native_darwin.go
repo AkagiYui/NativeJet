@@ -41,16 +41,6 @@ func Peer(fd uintptr, requirement string) (int, error) {
 	return int(uid), nil
 }
 
-type LoginItemStatus int
-
-const (
-	// These values mirror SMAppServiceStatus for registered apps.
-	LoginItemOff LoginItemStatus = iota
-	LoginItemOn
-	LoginItemRequiresApproval
-	LoginItemUnavailable LoginItemStatus = -1
-)
-
 func LoginItem(action string) (LoginItemStatus, error) {
 	a := C.CString(action)
 	defer C.free(unsafe.Pointer(a))

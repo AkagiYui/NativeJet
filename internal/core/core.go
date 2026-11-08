@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"nativejet/internal/logging"
@@ -82,7 +81,7 @@ func (s *Supervisor) Running() bool {
 		return false
 	}
 	path, stamp, err := platform.ProcessIdentity(r.PID)
-	return err == nil && path == r.Path && stamp == r.StartTime
+	return err == nil && platform.SamePath(path, r.Path) && stamp == r.StartTime
 }
 func (s *Supervisor) Restore(r *model.ProcessRecord, controller Controller) bool {
 	if r == nil {
@@ -122,8 +121,7 @@ func (s *Supervisor) Start(ctx context.Context, binary, home, config, revision s
 	after := s.Logs.Cursor()
 	cmd := exec.Command(binary, "-d", home, "-f", config)
 	cmd.Dir = home
-	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + home, "SAFE_PATHS=" + home}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	platform.ConfigureCoreCommand(cmd, home)
 	stdout, stderr := &processOutput{logs: &s.Logs}, &processOutput{logs: &s.Logs}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -213,15 +211,18 @@ func (s *Supervisor) Stop() error {
 		}
 		return nil
 	}
-	if path != r.Path || stamp != r.StartTime {
+	if !platform.SamePath(path, r.Path) || stamp != r.StartTime {
 		return errors.New("内核进程身份已变化，拒绝向不相关进程发送信号")
 	}
 	process, err := os.FindProcess(r.PID)
 	if err != nil {
 		return err
 	}
-	if err = process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
+	if err = platform.InterruptCore(process, r.Path, r.StartTime); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		if !platform.ForceStopOnInterruptFailure {
+			return err
+		}
+		s.Logs.Add("warning", "helper", "无法请求内核正常退出: "+err.Error())
 	}
 	until := time.Now().Add(6 * time.Second)
 	for s.Running() && time.Now().Before(until) {
@@ -229,8 +230,10 @@ func (s *Supervisor) Stop() error {
 	}
 	if s.Running() {
 		path, stamp, _ := platform.ProcessIdentity(r.PID)
-		if path == r.Path && stamp == r.StartTime {
-			_ = process.Kill()
+		if platform.SamePath(path, r.Path) && stamp == r.StartTime {
+			if err := process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				return fmt.Errorf("无法终止内核进程: %w", err)
+			}
 			s.Logs.Add("warning", "helper", "正常退出超时，已终止内核进程")
 		}
 	}

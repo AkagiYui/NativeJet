@@ -8,19 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"os/user"
-	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
-	"nativejet/internal/buildinfo"
 	"nativejet/internal/ipc"
 	"nativejet/internal/model"
-	"nativejet/internal/platform"
 )
 
 type Server struct {
@@ -28,7 +22,9 @@ type Server struct {
 	Installed                   bool
 	Socket, Data, Inbox, TeamID string
 	PeerRequirement             string
+	OwnerSID                    string
 	ApprovedKernels             map[string]bool
+	Ready                       chan struct{}
 	stop                        context.CancelFunc
 	recoveryError               string
 	mu                          sync.Mutex
@@ -39,40 +35,6 @@ type authenticatedConn struct {
 	net.Conn
 	uid int
 }
-type authenticatedListener struct {
-	net.Listener
-	requirement string
-	development bool
-	installed   bool
-}
-
-func (l *authenticatedListener) Accept() (net.Conn, error) {
-	for {
-		conn, err := l.Listener.Accept()
-		if err != nil {
-			return nil, err
-		}
-		u, ok := conn.(*net.UnixConn)
-		if !ok {
-			conn.Close()
-			continue
-		}
-		raw, err := u.SyscallConn()
-		if err != nil {
-			conn.Close()
-			continue
-		}
-		var uid int
-		var auth error
-		err = raw.Control(func(fd uintptr) { uid, auth = platform.Peer(fd, l.requirement) })
-		if err != nil || auth != nil || (l.development && uid != os.Getuid()) || (!l.development && !l.installed && uid == 0) {
-			conn.Close()
-			continue
-		}
-		return &authenticatedConn{Conn: conn, uid: uid}, nil
-	}
-}
-
 type uidKey struct{}
 
 func (s *Server) manager(ctx context.Context, uid int) (*Manager, error) {
@@ -81,23 +43,11 @@ func (s *Server) manager(ctx context.Context, uid int) (*Manager, error) {
 	if m := s.managers[uid]; m != nil {
 		return m, nil
 	}
-	u, err := user.LookupId(strconv.Itoa(uid))
+	opts, err := s.managerOptions(uid)
 	if err != nil {
 		return nil, err
 	}
-	gid, err := strconv.Atoi(u.Gid)
-	if err != nil {
-		return nil, err
-	}
-	data := s.Data
-	inbox := s.Inbox
-	if data == "" {
-		data = filepath.Join("/Library/Application Support/NativeJet/users", strconv.Itoa(uid))
-	}
-	if inbox == "" {
-		inbox = filepath.Join(u.HomeDir, "Library/Application Support/NativeJet/kernels")
-	}
-	m, err := New(Options{Data: data, Inbox: inbox, UID: uid, GID: gid, ApprovedKernels: s.ApprovedKernels})
+	m, err := New(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -112,66 +62,19 @@ func (s *Server) Serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	s.stop = cancel
-	requirement := s.PeerRequirement
-	if !s.Development {
-		if os.Geteuid() != 0 {
-			return errors.New("生产 helper 必须由已授权的 LaunchDaemon 启动")
-		}
-		if s.Installed {
-			if s.ApprovedKernels == nil {
-				return errors.New("已安装服务缺少内核授权记录")
-			}
-			requirement = ""
-		} else if requirement == "" {
-			var err error
-			requirement, err = platform.Requirement(buildinfo.AppID, s.TeamID)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	if s.Socket == "" {
-		return errors.New("未指定 IPC socket")
-	}
-	if _, err := os.Lstat(s.Socket); err == nil {
-		conn, err := net.DialTimeout("unix", s.Socket, 200*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			return errors.New("后台服务已经运行")
-		}
-		if err = os.Remove(s.Socket); err != nil {
-			return err
-		}
-	}
-	listener, err := net.Listen("unix", s.Socket)
+	listener, cleanup, err := s.listen(ctx)
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
-	defer os.Remove(s.Socket)
-	mode := os.FileMode(0666)
-	if s.Development {
-		mode = 0600
-	}
-	if err = os.Chmod(s.Socket, mode); err != nil {
-		return err
-	}
-	// Reconcile every persisted owner before accepting another user's start
-	// request; an old core can outlive an unexpected helper termination.
-	if !s.Development {
-		entries, _ := os.ReadDir("/Library/Application Support/NativeJet/users")
-		for _, entry := range entries {
-			uid, err := strconv.Atoi(entry.Name())
-			if err != nil || uid <= 0 || !entry.IsDir() {
-				continue
-			}
-			if _, err := s.manager(ctx, uid); err != nil {
-				s.recoveryError = fmt.Sprintf("无法恢复已有用户 %d 的后台状态: %v", uid, err)
-			}
-		}
+	defer cleanup()
+	if s.Ready != nil {
+		close(s.Ready)
 	}
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 16 << 10, ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-		return context.WithValue(ctx, uidKey{}, c.(*authenticatedConn).uid)
+		if peer, ok := c.(*authenticatedConn); ok {
+			return context.WithValue(ctx, uidKey{}, peer.uid)
+		}
+		return ctx
 	}}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -203,7 +106,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		_ = json.NewEncoder(w).Encode(response)
 	})
 	go func() { <-ctx.Done(); _ = server.Close() }()
-	err = server.Serve(&authenticatedListener{Listener: listener, requirement: requirement, development: s.Development, installed: s.Installed})
+	err = server.Serve(listener)
 	s.mu.Lock()
 	managers := make([]*Manager, 0, len(s.managers))
 	for _, m := range s.managers {

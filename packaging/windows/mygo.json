@@ -1,0 +1,9 @@
+{
+  "name": "NativeJet",
+  "identifier": "dev.nativejet.app",
+  "version": "0.2.7",
+  "main": "../../cmd/nativejet",
+  "out": "../../build",
+  "icon": "NativeJet.png",
+  "urlSchemes": ["clash"]
+}

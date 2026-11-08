@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,14 +17,20 @@ import (
 )
 
 func main() {
+	dest := flag.String("output", "licenses/dependencies", "license output directory")
+	targetOS := flag.String("goos", "", "target operating system for dependency discovery")
+	targetArch := flag.String("goarch", "", "target architecture for dependency discovery")
+	flag.Parse()
 	command := exec.Command("go", "list", "-deps", "-json", "./cmd/nativejet", "./cmd/nativejet-helper")
 	command.Stderr = os.Stderr
+	if *targetOS != "" && *targetArch != "" {
+		command.Env = append(os.Environ(), "GOOS="+*targetOS, "GOARCH="+*targetArch, "CGO_ENABLED=0")
+	}
 	data, err := command.Output()
 	if err != nil {
 		log.Fatal(err)
 	}
-	dest := "licenses/dependencies"
-	if err = os.MkdirAll(dest, 0755); err != nil {
+	if err = os.MkdirAll(*dest, 0755); err != nil {
 		log.Fatal(err)
 	}
 	var index strings.Builder
@@ -51,7 +58,7 @@ func main() {
 			continue
 		}
 		seen[module.Path] = true
-		base := filepath.Join(dest, strings.ReplaceAll(module.Path, "/", "_")+"@"+module.Version)
+		base := filepath.Join(*dest, strings.ReplaceAll(module.Path, "/", "_")+"@"+module.Version)
 		count := 0
 		err = filepath.WalkDir(module.Dir, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -98,10 +105,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(dest, "GO-LICENSE"), data, 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(*dest, "GO-LICENSE"), data, 0644); err != nil {
 		log.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(dest, "INDEX.txt"), []byte(index.String()), 0644); err != nil {
+	if err = os.WriteFile(filepath.Join(*dest, "INDEX.txt"), []byte(index.String()), 0644); err != nil {
 		log.Fatal(err)
 	}
 }

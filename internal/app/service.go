@@ -18,6 +18,14 @@ import (
 	"nativejet/internal/storage"
 )
 
+func appRegistration() (installation.Registration, error) {
+	r, err := installation.LoadRegistration()
+	if err == nil {
+		err = r.VerifyOwner()
+	}
+	return r, err
+}
+
 func installedClient(r installation.Registration) *ipc.Client {
 	return &ipc.Client{Socket: buildinfo.Socket, Requirement: r.HelperRequirement}
 }
@@ -39,7 +47,7 @@ func waitSnapshot(ctx context.Context, client *ipc.Client) (model.Snapshot, erro
 	return snap, fmt.Errorf("后台服务连接失败: %w", errors.Join(err, ctx.Err()))
 }
 func (a *App) refreshService() {
-	r, err := installation.LoadRegistration()
+	r, err := appRegistration()
 	if errors.Is(err, os.ErrNotExist) {
 		a.registration = nil
 		a.helperError = ""
@@ -118,7 +126,7 @@ func (a *App) installService(remove bool, approve string, done func()) {
 	a.problem = ""
 	a.operationCancel = nil
 	a.operationStarted = time.Now()
-	a.message = "正在准备配置备份，随后请在 macOS 弹窗中授权"
+	a.message = "正在准备配置备份，随后请在系统弹窗中授权"
 	if remove {
 		a.message = "正在卸载后台服务并保留配置"
 	}
@@ -198,7 +206,7 @@ func (a *App) installService(remove bool, approve string, done func()) {
 		removed := err == nil && remove
 		if err == nil && !remove {
 			var r installation.Registration
-			r, err = installation.LoadRegistration()
+			r, err = appRegistration()
 			if err == nil {
 				registration = &r
 				next = installedClient(r)

@@ -52,3 +52,34 @@ jobs:
           path: build/NativeJet-macos-${{ matrix.arch }}.zip
           archive: false
           if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Run Windows tests and vet
+        run: |
+          go test ./...
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          go vet ./...
+      - name: Build Windows packages
+        shell: bash
+        run: |
+          bash scripts/build-windows.sh amd64
+          bash scripts/build-windows.sh arm64
+      - name: Zip Windows packages
+        run: |
+          Compress-Archive -Path build/windows-amd64/* -DestinationPath build/NativeJet-windows-amd64.zip
+          Compress-Archive -Path build/windows-arm64/* -DestinationPath build/NativeJet-windows-arm64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          path: build/NativeJet-windows-*.zip
+          archive: false
+          if-no-files-found: error

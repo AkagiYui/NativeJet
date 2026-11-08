@@ -25,8 +25,8 @@ func (a *App) updateMenuBarDisplay(next menuBarDisplay) {
 	if next == prev {
 		return
 	}
-	stacked := next.layout == menuBarSpeedStacked
-	wasStacked := prev.layout == menuBarSpeedStacked
+	stacked := platformName == "macOS" && next.layout == menuBarSpeedStacked
+	wasStacked := platformName == "macOS" && prev.layout == menuBarSpeedStacked
 	rates, title, tip := "", "", "NativeJet"
 	if next.layout != menuBarSpeedOff {
 		rates = "↑ " + next.labels.up + "  ↓ " + next.labels.down

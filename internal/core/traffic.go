@@ -61,7 +61,7 @@ func (h *trafficHistory) since(cutoff time.Time) []model.TrafficPoint {
 func (s *Supervisor) followTraffic(ctx context.Context, controller Controller, record *model.ProcessRecord) {
 	for ctx.Err() == nil {
 		path, stamp, err := platform.ProcessIdentity(record.PID)
-		if err != nil || path != record.Path || stamp != record.StartTime {
+		if err != nil || !platform.SamePath(path, record.Path) || stamp != record.StartTime {
 			return
 		}
 		s.readTraffic(ctx, controller, record)

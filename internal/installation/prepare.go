@@ -11,11 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"nativejet/internal/kernel"
 	"nativejet/internal/model"
-	"nativejet/internal/platform"
 	"nativejet/internal/storage"
 )
 
@@ -26,7 +24,8 @@ type File struct {
 }
 type Payload struct {
 	Version           int          `json:"version"`
-	OwnerUID          int          `json:"ownerUid"`
+	OwnerUID          int          `json:"ownerUid,omitempty"`
+	OwnerSID          string       `json:"ownerSid,omitempty"`
 	HelperRequirement string       `json:"helperRequirement"`
 	HelperSHA256      string       `json:"helperSha256"`
 	State             *model.State `json:"state,omitempty"`
@@ -46,10 +45,6 @@ func (p *Prepared) Close() {
 // Prepare runs with ordinary user rights. Only immutable, hashed snapshots are
 // passed to the privileged installer; no credentials appear in its arguments.
 func Prepare(helperPath string, snapshot *model.Snapshot) (_ *Prepared, err error) {
-	helperReq, err := platform.SigningRequirement(helperPath)
-	if err != nil {
-		return nil, err
-	}
 	hash, err := kernel.Hash(helperPath)
 	if err != nil {
 		return nil, err
@@ -64,7 +59,13 @@ func Prepare(helperPath string, snapshot *model.Snapshot) (_ *Prepared, err erro
 			p.Close()
 		}
 	}()
-	payload := Payload{Version: 1, OwnerUID: os.Getuid(), HelperRequirement: helperReq, HelperSHA256: hash}
+	if err = secureStaging(dir); err != nil {
+		return nil, err
+	}
+	payload := Payload{Version: 1, HelperSHA256: hash}
+	if err = prepareIdentity(helperPath, &payload); err != nil {
+		return nil, err
+	}
 	if snapshot != nil {
 		data, _ := json.Marshal(snapshot.State)
 		var state model.State
@@ -77,7 +78,7 @@ func Prepare(helperPath string, snapshot *model.Snapshot) (_ *Prepared, err erro
 			if !digestPattern.MatchString(k.ID) {
 				return nil, errors.New("无效内核标识")
 			}
-			entry, copyErr := stageFile(dir, filepath.Join("cores", k.ID, "mihomo"), k.Path, kernel.MaxBinary)
+			entry, copyErr := stageFile(dir, filepath.Join("cores", k.ID, kernel.Executable), k.Path, kernel.MaxBinary)
 			if copyErr != nil {
 				return nil, copyErr
 			}
@@ -188,7 +189,7 @@ func readPayload(directory, digest string) (Payload, *os.Root, error) {
 	if err != nil {
 		return payload, nil, err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0077 != 0 {
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !privateStaging(directory, info) {
 		return payload, nil, errors.New("迁移目录权限不正确")
 	}
 	root, err := os.OpenRoot(directory)
@@ -207,9 +208,7 @@ func readPayload(directory, digest string) (Payload, *os.Root, error) {
 	if err = json.Unmarshal(data, &payload); err != nil {
 		return fail(err)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if payload.Version != 1 || payload.OwnerUID <= 0 || !ok || stat.Uid != uint32(payload.OwnerUID) ||
-		!digestPattern.MatchString(payload.HelperSHA256) {
+	if payload.Version != 1 || !validPayloadOwner(directory, info, payload) || !digestPattern.MatchString(payload.HelperSHA256) {
 		return fail(errors.New("迁移清单身份无效"))
 	}
 	if payload.ApproveKernel != "" && !digestPattern.MatchString(payload.ApproveKernel) {
@@ -221,12 +220,12 @@ func readPayload(directory, digest string) (Payload, *os.Root, error) {
 	seen := map[string]bool{}
 	var total int64
 	for _, file := range payload.Files {
-		if !fs.ValidPath(file.Path) || !(strings.HasPrefix(file.Path, "cores/") || strings.HasPrefix(file.Path, "runtime/")) ||
-			strings.Contains(file.Path, "\\") || seen[file.Path] || !digestPattern.MatchString(file.SHA256) ||
+		if !fs.ValidPath(file.Path) || !filepath.IsLocal(filepath.FromSlash(file.Path)) || !(strings.HasPrefix(file.Path, "cores/") || strings.HasPrefix(file.Path, "runtime/")) ||
+			strings.ContainsAny(file.Path, "\\:") || seen[manifestFileKey(file.Path)] || !digestPattern.MatchString(file.SHA256) ||
 			file.Size < 0 || file.Size > kernel.MaxBinary {
 			return fail(fmt.Errorf("无效迁移文件 %q", file.Path))
 		}
-		seen[file.Path] = true
+		seen[manifestFileKey(file.Path)] = true
 		total += file.Size
 		if total > 2<<30 {
 			return fail(errors.New("迁移数据过大"))

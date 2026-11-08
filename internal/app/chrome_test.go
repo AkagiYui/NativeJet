@@ -18,7 +18,7 @@ func TestStatusBarDoesNotMoveWorkspace(t *testing.T) {
 	a.message = "后台服务已连接"
 	a.appendLogs([]model.Log{{Sequence: 1, Source: "process", Level: "error", Message: "内核启动失败"}})
 	tester := ui.NewTester(a.view, 920, 640)
-	version := "macOS · " + buildinfo.Version
+	version := platformName + " · " + buildinfo.Version
 	start, ok := tester.Find(version)
 	if !ok {
 		t.Fatal("status bar does not show the version")

@@ -17,7 +17,13 @@ var menuBarOutlineIcon []byte
 
 func (a *App) Run() error {
 	mygo.App.SetName("NativeJet")
-	if a.startup.HideWindow {
+	if platformName == "Windows" {
+		if !mygo.App.RequestSingleInstanceLock() {
+			return nil
+		}
+		mygo.App.OnSecondInstance(func([]string, string) { a.showWindow() })
+	}
+	if platformName == "macOS" && a.startup.HideWindow {
 		// Apply the policy before AppKit launches so it won't activate the app.
 		mygo.App.Dock.Hide()
 	}
@@ -51,12 +57,12 @@ func (a *App) start() {
 		}),
 	})
 	if err != nil {
-		log.Printf("Could not create the NativeJet menu bar item: %v", err)
+		log.Printf("Could not create the NativeJet tray item: %v", err)
 	}
 	a.tray = tray
 	a.updateTray()
 	hidden := a.startup.HideWindow && tray != nil
-	if a.startup.HideWindow && !hidden {
+	if platformName == "macOS" && a.startup.HideWindow && !hidden {
 		// Keep the app reachable if the menu bar item couldn't be created.
 		mygo.App.Dock.Show()
 	}
@@ -73,18 +79,25 @@ func (a *App) start() {
 		}
 	})
 
-	a.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:                "NativeJet",
-		TitleBarStyle:        mygo.TitleBarHiddenInset,
-		TrafficLightPosition: &mygo.Point{X: 14, Y: 16},
-		Width:                1160,
-		Height:               800,
-		MinWidth:             920,
-		MinHeight:            640,
-		Hidden:               hidden,
-		Page:                 mygo.PageOptions{BackgroundThrottling: mygo.ThrottlingOff},
-		Content:              ui.View(a.view),
-	})
+	options := mygo.WindowOptions{
+		Title:     "NativeJet",
+		Width:     1160,
+		Height:    800,
+		MinWidth:  920,
+		MinHeight: 640,
+		Hidden:    hidden,
+		Page:      mygo.PageOptions{BackgroundThrottling: mygo.ThrottlingOff},
+		Content:   ui.View(a.view),
+	}
+	switch platformName {
+	case "macOS":
+		options.TitleBarStyle = mygo.TitleBarHiddenInset
+		options.TrafficLightPosition = &mygo.Point{X: 14, Y: 16}
+	case "Windows":
+		options.TitleBarStyle = mygo.TitleBarHidden
+		options.TitleBarHeight = toolbarHeight
+	}
+	a.win = mygo.NewWindow(options)
 	if a.page == settingsPage {
 		a.refreshLoginItem()
 	}
@@ -102,7 +115,9 @@ func (a *App) start() {
 		if a.tray != nil && !a.quitting {
 			e.PreventDefault()
 			a.win.Hide()
-			mygo.App.Dock.Hide()
+			if platformName == "macOS" {
+				mygo.App.Dock.Hide()
+			}
 		}
 	})
 	a.message = "正在连接后台服务…"
@@ -161,7 +176,7 @@ func (a *App) showWindow() {
 	if a.win == nil || a.quitting {
 		return
 	}
-	if mygo.App.ActivationPolicy() == mygo.ActivationPolicyAccessory {
+	if platformName == "macOS" && mygo.App.ActivationPolicy() == mygo.ActivationPolicyAccessory {
 		mygo.App.Dock.Show()
 	}
 	a.win.Restore()

@@ -271,7 +271,7 @@ func (a *App) kernelView(c *ui.Context) {
 		muted(c, fmt.Sprintf("%d 个内核", len(a.snapshot.Kernels)))
 	})
 	if len(a.snapshot.Kernels) == 0 {
-		emptyState(c, kernelIcon, "还没有发现内核", "把 macOS 内核放入目录后重新扫描，或点击“下载内核”。", nil)
+		emptyState(c, kernelIcon, "还没有发现内核", "把 "+platformName+" 内核放入目录后重新扫描，或点击“下载内核”。", nil)
 		return
 	}
 
@@ -572,7 +572,7 @@ func (a *App) settingsView(c *ui.Context) {
 						stateLabel(c, "未安装系统服务", p.TextMuted)
 					}
 				})
-				muted(c, "安装并授权系统服务后即可使用 TUN。安装需要 macOS 管理员密码。")
+				muted(c, serviceInstallHelp)
 				if a.registration != nil && !a.connected {
 					muted(c, "系统服务尚未连接，可更新服务或重新连接。")
 				} else {
@@ -613,7 +613,7 @@ func (a *App) settingsView(c *ui.Context) {
 					})
 					if action(c, nil, "将 NativeJet 设为 Clash 链接默认应用", false).Shrink(0).Disabled(a.busy).Clicked() {
 						if err := mygo.App.RegisterURLScheme("clash"); err != nil {
-							a.problem = "无法设置 Clash 链接的默认应用，请从打包的 NativeJet.app 重试"
+							a.problem = linkError
 						} else {
 							a.problem = ""
 							a.message = "NativeJet 已设为 Clash 链接的默认应用"

@@ -2,19 +2,15 @@ package storage
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"nativejet/internal/model"
 )
-
-const DefaultOverride = "# 所有影响内核的默认设置均在此处可见。\nmixed-port: 7897\nallow-lan: false\nlog-level: info\ntun:\n  enable: true\n  stack: mixed\n  auto-route: true\n  auto-detect-interface: true\n"
 
 func ID() string {
 	var b [12]byte
@@ -51,7 +47,7 @@ func Atomic(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	if err = os.Rename(tmp, path); err != nil {
+	if err = replaceFile(tmp, path); err != nil {
 		return err
 	}
 	d, err := os.Open(dir)
@@ -64,17 +60,6 @@ func Atomic(path string, data []byte, mode os.FileMode) error {
 
 type Store struct{ Directory string }
 
-func RuntimeDirectory(data string) string {
-	dir := filepath.Join(data, "runtime")
-	// Keep the runtime location chosen by earlier versions for existing revisions
-	// and Mihomo's relative paths. The former socket suffix occupied 16 bytes.
-	if len(dir) > 84 {
-		sum := sha256.Sum256([]byte(data))
-		dir = filepath.Join(os.TempDir(), "nativejet-"+hex.EncodeToString(sum[:8]))
-	}
-	return dir
-}
-
 func New(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -86,12 +71,10 @@ func New(dir string) (*Store, error) {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("数据目录必须为真实目录")
 	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Uid != uint32(os.Geteuid()) {
-		return nil, errors.New("数据目录不属于当前服务用户，拒绝接管")
-	}
-	if err := os.Chmod(dir, 0700); err != nil {
+	if err := checkDirectory(dir, info); err != nil {
 		return nil, err
 	}
+
 	return &Store{Directory: dir}, nil
 }
 func (s *Store) Path(parts ...string) string {

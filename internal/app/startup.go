@@ -97,7 +97,7 @@ func (a *App) refreshLoginItem() {
 	if !a.loginItem.available {
 		return
 	}
-	status, err := platform.LoginItem("status")
+	status, err := loginItem("status")
 	a.loginItem.status = status
 	a.loginItem.problem = ""
 	if err != nil {
@@ -110,7 +110,7 @@ func (a *App) setLoginItem(enabled bool) {
 	if enabled {
 		op = "register"
 	}
-	status, err := platform.LoginItem(op)
+	status, err := loginItem(op)
 	if err != nil {
 		a.refreshLoginItem()
 		a.loginItem.problem = "无法更改登录项：" + err.Error()
@@ -127,21 +127,21 @@ func (a *App) startupSettings(c *ui.Context) {
 		Role(ui.RoleGroup).Label("启动").Children(func() {
 		ui.Text(c, "启动").FontSize(15).FontWeight(600)
 		login := a.loginItem.status == platform.LoginItemOn || a.loginItem.status == platform.LoginItemRequiresApproval
-		description := "登录 macOS 后自动打开 NativeJet。"
+		description := "登录 " + platformName + " 后自动打开 NativeJet。"
 		switch {
 		case !a.loginItem.available:
-			description = "请从 NativeJet.app 正常启动后设置登录项。"
+			description = "请从发布包正常启动 NativeJet 后设置登录项。"
 		case a.loginItem.status == platform.LoginItemRequiresApproval:
 			description = "登录项尚未获准，请前往系统设置允许 NativeJet 在登录时打开。"
 		case a.loginItem.status == platform.LoginItemUnavailable:
-			description = "macOS 无法读取此 App 的登录项。"
+			description = "系统无法读取 NativeJet 的登录项。"
 		}
 		if startupSwitch(c, "开机启动", description, &login, !a.loginItem.available || a.loginItem.status == platform.LoginItemUnavailable) {
 			a.setLoginItem(login)
 		}
 		if a.loginItem.status == platform.LoginItemRequiresApproval || a.loginItem.problem != "" {
 			if action(c, nil, "打开系统登录项设置", false).AlignSelf(ui.Start).Clicked() {
-				if _, err := platform.LoginItem("settings"); err != nil {
+				if _, err := loginItem("settings"); err != nil {
 					a.loginItem.problem = err.Error()
 				}
 			}
@@ -153,7 +153,7 @@ func (a *App) startupSettings(c *ui.Context) {
 		if startupSwitch(c, "启动时自动启动内核", "下次启动 NativeJet 时，连接后台服务后启动内核。需要已应用的配置及所需授权。", &prefs.AutoStartCore, false) {
 			a.saveStartup(prefs)
 		}
-		if startupSwitch(c, "启动时不显示窗口", "下次启动时只显示菜单栏图标，可从菜单栏打开主窗口。", &prefs.HideWindow, false) {
+		if startupSwitch(c, "启动时不显示窗口", "下次启动时只显示"+trayName+"图标，可从"+trayName+"打开主窗口。", &prefs.HideWindow, false) {
 			a.saveStartup(prefs)
 		}
 		if a.startupError != "" {

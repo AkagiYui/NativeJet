@@ -104,10 +104,10 @@ func migrate(payload Payload, source *os.Root, target string) (model.State, erro
 		mode := os.FileMode(0600)
 		if strings.HasPrefix(file.Path, "cores/") {
 			pieces := strings.Split(file.Path, "/")
-			if len(pieces) != 3 || !digestPattern.MatchString(pieces[1]) || pieces[2] != "mihomo" || file.SHA256 != pieces[1] {
+			if len(pieces) != 3 || !digestPattern.MatchString(pieces[1]) || pieces[2] != kernel.Executable || file.SHA256 != pieces[1] {
 				return state, errors.New("内核迁移路径无效")
 			}
-			mode = 0555
+			mode = installedExecutableMode
 		} else {
 			relative := strings.TrimPrefix(file.Path, "runtime/")
 			dest = filepath.Join(runtimeDir, filepath.FromSlash(relative))
@@ -141,7 +141,7 @@ func migrate(payload Payload, source *os.Root, target string) (model.State, erro
 		}
 	}
 	for _, k := range incoming.Installed {
-		k.Path = filepath.Join(target, "cores", k.ID, "mihomo")
+		k.Path = filepath.Join(target, "cores", k.ID, kernel.Executable)
 		k.Installed = true
 		hash, e := kernel.Hash(k.Path)
 		if e != nil || hash != k.ID {

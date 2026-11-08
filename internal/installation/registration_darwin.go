@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"syscall"
 
 	"nativejet/internal/buildinfo"
@@ -28,8 +27,6 @@ type Registration struct {
 	HelperSHA256      string   `json:"helperSha256"`
 	ApprovedKernels   []string `json:"approvedKernels"`
 }
-
-var digestPattern = regexp.MustCompile("^[a-f0-9]{64}$")
 
 func (r Registration) Validate() error {
 	if r.Version != 1 || r.OwnerUID <= 0 ||
@@ -82,3 +79,5 @@ func launchDaemon(helper, logDir string) []byte {
 <key>StandardErrorPath</key><string>%s/helper.log</string>
 </dict></plist>`, buildinfo.HelperID, helper, logDir, logDir))
 }
+
+func (Registration) VerifyOwner() error { return nil }

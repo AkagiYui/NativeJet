@@ -74,7 +74,7 @@ func (a *App) geoDataView(c *ui.Context) {
 		property(c, "内核运行目录", a.snapshot.Status.RuntimeDirectory)
 		muted(c, "下载源由运行中的 Mihomo 报告。本地文件可能来自先前的下载。")
 		if a.coreRunning() && data.SourceError != "" {
-			muted(c, "如需启用控制接口，可在覆盖配置中添加 external-controller-unix: mihomo.sock 并应用。")
+			muted(c, "如需启用控制接口，可在覆盖配置中添加 "+controllerExample+" 并应用。")
 		}
 		if data.FileError != "" {
 			muted(c, "无法检查运行目录 · "+data.FileError)

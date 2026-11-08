@@ -15,6 +15,20 @@ const (
 )
 
 func (a *App) menuBarSettings(c *ui.Context) {
+	if platformName == "Windows" {
+		show := a.appearance.MenuBarSpeedLayout != menuBarSpeedOff
+		if startupSwitch(c, "托盘速率提示", "悬停在托盘图标上时显示上传和下载速度。", &show, false) {
+			prefs := a.appearance
+			prefs.MenuBarSpeedLayout = menuBarSpeedOff
+			if show {
+				prefs.MenuBarSpeedLayout = menuBarSpeedSideBySide
+			}
+			if a.saveAppearance(prefs) {
+				a.updateTray()
+			}
+		}
+		return
+	}
 	ui.Row(c.Key("menu-bar-settings")).FillWidth().Gap(16).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 			ui.Text(c, "菜单栏速度").FontSize(15).FontWeight(600)

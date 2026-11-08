@@ -2,19 +2,17 @@ package kernel
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
-	"debug/macho"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -23,7 +21,6 @@ import (
 	"time"
 
 	"nativejet/internal/model"
-	"nativejet/internal/platform"
 	"nativejet/internal/storage"
 )
 
@@ -42,7 +39,12 @@ func (m *Manager) client() *http.Client {
 	return &http.Client{Timeout: 90 * time.Second}
 }
 func (m *Manager) Scan(ctx context.Context) ([]model.Kernel, error) {
-	entries, err := os.ReadDir(m.Inbox)
+	root, err := os.OpenRoot(m.Inbox)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	entries, err := fs.ReadDir(root.FS(), ".")
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +54,7 @@ func (m *Manager) Scan(ctx context.Context) ([]model.Kernel, error) {
 			continue
 		}
 		path := filepath.Join(m.Inbox, entry.Name())
-		info, err := os.Lstat(path)
+		info, err := root.Lstat(entry.Name())
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
@@ -60,73 +62,26 @@ func (m *Manager) Scan(ctx context.Context) ([]model.Kernel, error) {
 			continue
 		}
 		item := model.Kernel{Name: entry.Name(), Path: path, Arch: runtime.GOARCH}
-		hash, err := Hash(path)
+		f, err := root.Open(entry.Name())
 		if err != nil {
+			continue
+		}
+		hash, err := hashBinary(f)
+		if err != nil {
+			_ = f.Close()
 			item.Error = err.Error()
 			out = append(out, item)
 			continue
 		}
 		item.ID = hash
-		if err = validateMachO(path); err != nil {
-			item.Error = err.Error()
-			out = append(out, item)
-			continue
-		}
-		if info.Mode()&0111 == 0 {
-			item.Error = "缺少执行权限：请在 Finder 或终端赋予文件执行权限"
-			out = append(out, item)
-			continue
-		}
-		probe, cancel := context.WithTimeout(ctx, 3*time.Second)
-		cmd := exec.CommandContext(probe, path, "-v")
-		cmd.SysProcAttr = platform.Credentials(m.UID, m.GID)
-		cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + m.Inbox}
-		var buf boundedBuffer
-		cmd.Stdout = &buf
-		cmd.Stderr = &buf
-		err = cmd.Run()
-		cancel()
-		text := strings.TrimSpace(buf.String())
-		if err != nil {
-			item.Error = "无法读取版本: " + err.Error()
-		} else if !strings.Contains(strings.ToLower(text), "mihomo") && !strings.Contains(text, "Clash.Meta") {
-			item.Error = "首版支持 Mihomo / Clash.Meta 内核"
-		} else {
-			item.Version = strings.Split(text, "\n")[0]
-		}
-		if len(item.Version) > 180 {
-			item.Version = item.Version[:180]
-		}
-		_, err = os.Stat(filepath.Join(m.Installed, item.ID, "mihomo"))
+		m.probe(ctx, info, f, &item)
+		_ = f.Close()
+		_, err = os.Stat(filepath.Join(m.Installed, item.ID, Executable))
 		item.Installed = err == nil
 		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
-}
-func validateMachO(path string) error {
-	valid := func(f *macho.File) bool {
-		return runtime.GOARCH == "arm64" && f.Cpu == macho.CpuArm64 || runtime.GOARCH == "amd64" && f.Cpu == macho.CpuAmd64
-	}
-	f, err := macho.Open(path)
-	if err == nil {
-		defer f.Close()
-		if valid(f) {
-			return nil
-		}
-		return errors.New("内核架构与本机不匹配")
-	}
-	fat, err := macho.OpenFat(path)
-	if err != nil {
-		return errors.New("不是可识别的 macOS Mach-O 可执行文件")
-	}
-	defer fat.Close()
-	for _, arch := range fat.Arches {
-		if valid(arch.File) {
-			return nil
-		}
-	}
-	return errors.New("通用内核不包含本机架构")
 }
 func Hash(path string) (string, error) {
 	f, err := os.Open(path)
@@ -134,6 +89,10 @@ func Hash(path string) (string, error) {
 		return "", err
 	}
 	defer f.Close()
+	return hashBinary(f)
+}
+
+func hashBinary(f io.Reader) (string, error) {
 	h := sha256.New()
 	n, err := io.Copy(h, io.LimitReader(f, MaxBinary+1))
 	if err != nil {
@@ -186,8 +145,8 @@ func (m *Manager) Install(ctx context.Context, id string) (model.Kernel, error) 
 		if err = os.MkdirAll(dir, 0700); err != nil {
 			return item, err
 		}
-		target := filepath.Join(dir, "mihomo")
-		if err = storage.Atomic(target, data, 0555); err != nil {
+		target := filepath.Join(dir, Executable)
+		if err = writeExecutable(target, data); err != nil {
 			return item, err
 		}
 		item.Path = target
@@ -244,10 +203,7 @@ func (m *Manager) Releases(ctx context.Context) ([]model.Release, error) {
 			continue
 		}
 		for _, a := range r.Assets {
-			if !strings.HasPrefix(a.Name, "mihomo-darwin-"+runtime.GOARCH) || !strings.HasSuffix(a.Name, ".gz") || strings.Contains(a.Name, "alpha") {
-				continue
-			}
-			if runtime.GOARCH == "amd64" && !strings.Contains(a.Name, "compatible") {
+			if !releaseAsset(a.Name) {
 				continue
 			}
 			items = append(items, model.Release{Name: a.Name, Version: r.Tag, AssetID: a.ID, Size: a.Size, Digest: a.Digest, URL: a.URL})
@@ -307,24 +263,15 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 			return "", errors.New("官方 SHA-256 校验失败")
 		}
 	}
-	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	binary, name, err := unpack(compressed, asset.Name)
 	if err != nil {
 		return "", err
-	}
-	defer reader.Close()
-	binary, err := io.ReadAll(io.LimitReader(reader, MaxBinary+1))
-	if err != nil {
-		return "", err
-	}
-	if len(binary) > MaxBinary {
-		return "", errors.New("解压后的内核过大")
 	}
 	root, err := os.OpenRoot(m.Inbox)
 	if err != nil {
 		return "", err
 	}
 	defer root.Close()
-	name := strings.TrimSuffix(asset.Name, ".gz")
 	if filepath.Base(name) != name {
 		return "", errors.New("无效资源名称")
 	}
@@ -335,7 +282,7 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	}
 	defer root.Remove(tmp)
 	if _, err = f.Write(binary); err == nil {
-		err = f.Chown(m.UID, m.GID)
+		err = m.setDownloadOwner(f)
 	}
 	if err == nil {
 		err = f.Sync()
@@ -350,7 +297,7 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	if err = root.Rename(tmp, name); err != nil {
 		return "", err
 	}
-	if err = validateMachO(filepath.Join(m.Inbox, name)); err != nil {
+	if err = validateExecutable(filepath.Join(m.Inbox, name)); err != nil {
 		_ = root.Remove(name)
 		return "", err
 	}

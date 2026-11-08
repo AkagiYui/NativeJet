@@ -1,6 +1,6 @@
 # NativeJet
 
-macOS 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，界面没有 WebView。
+macOS 和 Windows 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，界面没有 WebView。
 安装包仅包含 App 与 helper，不附带、不链接代理内核。
 
 ## 功能
@@ -14,9 +14,27 @@ macOS 原生 Mihomo/Clash.Meta 管理器。使用 MyGo Native UI，界面没有 
 - 内核启动失败时显示本次进程报错。内核运行时产生的错误也可在日志页查看。
 - 配置历史、恢复、已应用配置与当前预览的原生差异查看器。
 
-首版面向 macOS 13+，原生构建本机架构。Windows 属于后续阶段。
+支持 macOS 13+ 和 Windows 10/11（x64、ARM64）。Windows 使用独立的系统后台服务运行 TUN。
 
-## 构建与运行
+## Windows 构建与使用
+
+1. 解压与系统架构匹配的 Windows ZIP，将 `NativeJet.exe` 和 `nativejet-helper.exe` 放在同一目录，再运行 `NativeJet.exe`。关闭窗口后可通过系统托盘恢复。
+2. 在「内核」下载官方 Windows ZIP，或将解压后的同架构 Mihomo EXE 放入内核目录后扫描并选用。扫描读取 PE 和 Go 构建信息，无需执行待授权的 EXE。
+3. 在「设置」安装后台服务并完成 UAC 授权。切换到未授权的内核时，管理员需要批准该内核的 SHA-256。普通用户服务可用于不启用 TUN 的配置。
+4. 导入配置并应用。Windows 的默认覆盖包含 TUN 和 Mihomo 的本地命名管道控制接口，具体值可在覆盖页面编辑。使用从 macOS 带来的 YAML 时，可将 Unix 控制地址换成 Windows 命名管道或带 `secret` 的回环 HTTP。
+
+Windows App 和 helper 使用受 Windows ACL 保护的本地命名管道。系统服务按一个已授权的用户 SID 管理配置，状态和内核运行目录位于 `%ProgramData%\NativeJet`，GUI 偏好位于 `%LOCALAPPDATA%\NativeJet`。卸载后台服务会保留系统配置数据。
+
+需要 Go 1.27.3+。在 macOS 或 Windows Git Bash 中构建：
+
+```sh
+bash scripts/build-windows.sh amd64
+bash scripts/build-windows.sh arm64
+```
+
+输出在 `build/windows-amd64` 和 `build/windows-arm64`。Windows 上可以执行 `go test ./...`、`go vet ./...`，以及 `nativejetctl.exe -installed snapshot` 检查已安装服务。GitHub Actions 为两个架构生成 ZIP。
+
+## macOS 构建与运行
 
 需要 Go 1.27.3+ 和 Xcode Command Line Tools。MyGo 固定为 v0.7.4。
 项目使用少量 Objective-C/C 桥接 ServiceManagement、Security 和 libproc；
@@ -64,7 +82,7 @@ build/NativeJet.app/Contents/MacOS/NativeJet \
 内核应有执行权限，且架构与当前机器匹配。扫描的版本探测以登录用户权限运行。
 “使用所选内核”会将实际文件内容校验并复制到受管理目录；启动时再次核对哈希。
 
-## 在界面中安装、授权与测试 TUN
+## 在 macOS 上安装、授权与测试 TUN
 
 1. 在“内核”选择自己放入或从官方来源下载的内核。
 2. 打开“设置”，点击“安装并授权后台服务”，完成系统管理员授权。
@@ -144,7 +162,7 @@ HTTP 和 HTTPS 请求使用配置中的 `secret`。控制地址、密钥和外�
 内核运行时，helper 停止旧进程，再用新 YAML 启动 Mihomo。由 Mihomo 在启动时解析配置。
 保存和订阅更新之后，需要点击“应用配置”才会切换版本。
 
-## 目录与权限
+## macOS 目录与权限
 
 用户放置内核的目录：
 
@@ -167,7 +185,7 @@ HTTP 和 HTTPS 请求使用配置中的 `secret`。控制地址、密钥和外�
 配置可能包含订阅凭据和节点密码，文件依靠操作系统权限保护，并非加密数据库。
 
 App 只调用版本化 helper 协议，不直接调用 core API。当前传输采用 Unix socket，
-便于保留 Go 业务协议并在 Windows 阶段替换传输层。Mihomo 的控制接口独立，由最终 YAML 指定。
+Windows 版沿用同一 Go 业务协议并通过命名管道传输。Mihomo 的控制接口独立，由最终 YAML 指定。
 helper 不提供通用 shell 命令或任意 core API 转发接口。
 
 ## 开发 CLI 与测试
