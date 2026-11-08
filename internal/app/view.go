@@ -346,43 +346,62 @@ func (a *App) kernelView(c *ui.Context) {
 }
 func (a *App) connectionsView(c *ui.Context) {
 	workspaceHeader(c, linkIcon, "连接", func() {
-		if a.coreRunning() && a.connections != nil && a.connectionsError == nil {
+		if ui.Tabs(c, &a.connectionTab, "活动", "已关闭").Label("连接状态").Changed() {
+			a.connectionIndex = -1
+			a.connectionRows.ScrollTo(0, ui.Start)
+		}
+		if a.connectionTab == 1 {
+			muted(c, fmt.Sprintf("%d 条记录", len(a.closedConnections)))
+		} else if a.coreRunning() && a.connections != nil && a.connectionsError == nil {
 			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
 		}
 		a.connectionColumnSettings(c)
 	})
-	if !a.connected {
-		emptyState(c, linkIcon, "后台服务未连接", "连接后台服务后即可读取活动连接。", nil)
-		return
-	}
-	if !a.coreRunning() {
-		emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接。", nil)
-		return
-	}
-	if problem := a.connectionsError; problem != nil {
-		emptyState(c, linkIcon, "无法读取 Mihomo 控制接口", problem.Error(), nil)
-		return
-	}
-	if a.connections == nil {
-		emptyState(c, linkIcon, "正在读取活动连接", "", nil)
-		return
+	closed := a.connectionTab == 1
+	connections := a.closedConnections
+	if !closed {
+		switch {
+		case !a.connected:
+			emptyState(c, linkIcon, "后台服务未连接", "连接后台服务后即可读取活动连接。", nil)
+			return
+		case !a.coreRunning():
+			emptyState(c, linkIcon, "内核未运行", "启动内核后，这里会显示实时连接。", nil)
+			return
+		case a.connectionsError != nil:
+			emptyState(c, linkIcon, "无法读取 Mihomo 控制接口", a.connectionsError.Error(), nil)
+			return
+		case a.connections == nil:
+			emptyState(c, linkIcon, "正在读取活动连接", "", nil)
+			return
+		}
+		connections = a.connections.Connections
 	}
 	commandRow(c, func() {
 		ui.TextInput(c, &a.search).Placeholder("搜索主机、地址、进程、规则或策略").Grow(1).MinWidth(0).Label("搜索连接")
-		if action(c, nil, "关闭全部", false).Disabled(a.busy).Clicked() {
+		if closed {
+			if action(c.Key("clear-history"), nil, "清空历史", false).Disabled(len(a.closedConnections) == 0).Clicked() {
+				a.closedConnections = nil
+				connections = nil
+			}
+		} else if action(c.Key("close-all-connections"), nil, "关闭全部", false).Disabled(a.busy).Clicked() {
 			a.request("connections.closeAll", nil, "连接已关闭", nil)
 		}
 	})
 	rows := []model.Connection{}
 	query := strings.ToLower(a.search)
-	for _, conn := range a.connections.Connections {
+	for _, conn := range connections {
 		if query == "" || connectionMatches(conn, query) {
 			rows = append(rows, conn)
 		}
 	}
+	listLabel, emptyLabel := "活动连接列表", "暂无活动连接"
+	if closed {
+		listLabel, emptyLabel = "已关闭连接列表", "暂无已关闭连接"
+	}
 	if len(rows) == 0 {
-		if query == "" {
-			emptyState(c, linkIcon, "暂无活动连接", "", nil)
+		a.connectionIndex, a.connectionRows.Key = -1, nil
+		if query == "" || len(connections) == 0 && closed {
+			emptyState(c, linkIcon, emptyLabel, "", nil)
 		} else {
 			emptyState(c, linkIcon, "没有匹配的连接", "试试其他地址、进程、规则或策略名称。", nil)
 		}
@@ -401,7 +420,7 @@ func (a *App) connectionsView(c *ui.Context) {
 			}
 		}
 		followTableSelection(&a.connectionRows, rows, func(conn model.Connection) string { return conn.ID })
-		workspaceTable(c, &a.connectionRows, visible, len(rows), "活动连接列表", func(row, col int) {
+		workspaceTable(c, &a.connectionRows, visible, len(rows), listLabel, func(row, col int) {
 			text := a.connectionCellText(rows[row], visibleIndices[col])
 			ui.Text(c, text).FontSize(12).SingleLine().Tooltip(text)
 		})
@@ -410,7 +429,7 @@ func (a *App) connectionsView(c *ui.Context) {
 			selected = &rows[a.connectionIndex]
 		}
 		inspector(c, "连接详情", func() {
-			if selected != nil && action(c, nil, "关闭此连接", false).Disabled(a.busy).Clicked() {
+			if !closed && selected != nil && action(c, nil, "关闭此连接", false).Disabled(a.busy).Clicked() {
 				a.request("connections.close", map[string]string{"id": selected.ID}, "连接已关闭", nil)
 			}
 		}, func() {

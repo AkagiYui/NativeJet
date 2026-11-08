@@ -69,6 +69,9 @@ type App struct {
 	connectionsError, proxiesError          error
 	connectionSampleAt                      time.Time
 	connectionSpeeds                        map[string]connectionSpeed
+	lastActiveConnections                   []model.Connection
+	closedConnections                       []model.Connection
+	connectionTab                           int
 	metricsTab                              int
 	metrics                                 [len(metricSections)]*metricsResult
 	geoData                                 *geoResult

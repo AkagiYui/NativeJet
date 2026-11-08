@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -54,6 +55,93 @@ func TestConnectionSpeedsAcrossSnapshots(t *testing.T) {
 	a.acceptConnections(next, nil, at.Add(4*time.Second))
 	if len(a.connectionSpeeds) != 0 {
 		t.Fatal("first sample after a core reset must not report a speed")
+	}
+}
+
+func TestClosedConnectionsFromSuccessfulSnapshots(t *testing.T) {
+	a := &App{}
+	at := time.Now()
+	a.acceptConnections(&model.Connections{Connections: []model.Connection{
+		{ID: "keep"}, {ID: "close", Upload: 10},
+	}}, nil, at)
+	a.acceptConnections(&model.Connections{}, errors.New("controller unavailable"), at.Add(time.Second))
+	if len(a.closedConnections) != 0 {
+		t.Fatal("a failed read must not mark active connections as closed")
+	}
+
+	a.acceptConnections(&model.Connections{Connections: []model.Connection{
+		{ID: "keep"}, {ID: "new"},
+	}}, nil, at.Add(2*time.Second))
+	if got := a.closedConnections; len(got) != 1 || got[0].ID != "close" || got[0].Upload != 10 {
+		t.Fatalf("history should contain the last snapshot of the missing connection, got %+v", got)
+	}
+
+	a.resetWindowData()
+	if len(a.closedConnections) != 1 {
+		t.Fatal("resetting live data should keep history")
+	}
+	a.acceptConnections(&model.Connections{}, nil, at.Add(3*time.Second))
+	if got := a.closedConnections; len(got) != 3 || got[0].ID != "keep" || got[1].ID != "new" || got[2].ID != "close" {
+		t.Fatalf("empty snapshot should add the last active connections ahead of the older entry, got %+v", got)
+	}
+}
+
+func TestClosedConnectionsRetainNewestRecords(t *testing.T) {
+	a := &App{}
+	at := time.Now()
+	first := &model.Connections{Connections: make([]model.Connection, 501)}
+	for i := range first.Connections {
+		first.Connections[i].ID = strconv.Itoa(i)
+	}
+	a.acceptConnections(first, nil, at)
+	a.acceptConnections(&model.Connections{Connections: []model.Connection{{ID: "newest"}}}, nil, at.Add(time.Second))
+	if got := len(a.closedConnections); got != 500 {
+		t.Fatalf("large batch left %d history entries, want 500", got)
+	}
+	a.acceptConnections(&model.Connections{}, nil, at.Add(2*time.Second))
+	if got := a.closedConnections; len(got) != 500 || got[0].ID != "newest" || got[499].ID != "498" {
+		t.Fatalf("new entry should replace the oldest retained entry, got %d entries", len(got))
+	}
+}
+
+func TestClosedConnectionsTabAndClear(t *testing.T) {
+	a, err := New(Options{Data: t.TempDir(), Helper: "/unused", Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.page, a.connected, a.snapshot.Status.Running = "连接", true, true
+	active := model.Connection{ID: "active"}
+	active.Metadata.Host = "active.example"
+	closed := model.Connection{ID: "closed"}
+	closed.Metadata.Host = "closed.example"
+	at := time.Now()
+	a.acceptConnections(&model.Connections{Connections: []model.Connection{active, closed}}, nil, at)
+	a.acceptConnections(&model.Connections{Connections: []model.Connection{active}}, nil, at.Add(time.Second))
+
+	tester := ui.NewTester(a.view, 920, 640)
+	tester.SetTitleBar(ui.TitleBar{Height: toolbarHeight, Right: 138})
+	if err := tester.Click("已关闭"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tester.Find("closed.example"); !ok {
+		t.Fatal("closed connection did not appear in history")
+	}
+	if _, ok := tester.Find("关闭全部"); ok {
+		t.Fatal("history must not offer to close active connections")
+	}
+	a.connected = false
+	if err := tester.Click("清空历史"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tester.Find("暂无已关闭连接"); !ok || len(a.closedConnections) != 0 {
+		t.Fatal("clearing history should show its empty state")
+	}
+	a.connected = true
+	if err := tester.Click("活动"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tester.Find("active.example"); !ok {
+		t.Fatal("clearing history should leave active connections intact")
 	}
 }
 

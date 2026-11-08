@@ -30,34 +30,69 @@ type connectionSpeed struct {
 	upload, download int64
 }
 
+const maxClosedConnections = 500
+
 func (a *App) acceptConnections(next *model.Connections, err error, at time.Time) {
-	previous := a.connections
 	elapsed := at.Sub(a.connectionSampleAt)
 	a.connectionSpeeds = nil
-	if err == nil && a.connectionsError == nil && next != nil && previous != nil &&
-		!a.connectionSampleAt.IsZero() && elapsed > 0 {
-		byID := make(map[string]int, len(previous.Connections))
-		for i, conn := range previous.Connections {
+	if err == nil && next != nil {
+		sampleSpeeds := a.connectionsError == nil && a.connections != nil &&
+			!a.connectionSampleAt.IsZero() && elapsed > 0
+		a.compareConnections(next.Connections, sampleSpeeds, elapsed)
+	}
+	a.connections, a.connectionsError, a.connectionSampleAt = next, err, at
+}
+
+func (a *App) compareConnections(next []model.Connection, sampleSpeeds bool, elapsed time.Duration) {
+	// Keep the last successful snapshot through transient errors and core restarts.
+	previous := a.lastActiveConnections
+	a.lastActiveConnections = next
+	if len(previous) == 0 {
+		return
+	}
+	byID := make(map[string]int, len(previous))
+	for i, conn := range previous {
+		if conn.ID != "" {
 			byID[conn.ID] = i
 		}
+	}
+	if sampleSpeeds {
 		a.connectionSpeeds = make(map[string]connectionSpeed)
-		for _, conn := range next.Connections {
-			i, ok := byID[conn.ID]
-			if !ok || conn.ID == "" {
-				continue
-			}
-			old := previous.Connections[i]
-			if conn.Start != old.Start || old.Upload < 0 || old.Download < 0 ||
-				conn.Upload < old.Upload || conn.Download < old.Download {
-				continue
-			}
-			a.connectionSpeeds[conn.ID] = connectionSpeed{
-				upload:   connectionBytesPerSecond(conn.Upload-old.Upload, elapsed),
-				download: connectionBytesPerSecond(conn.Download-old.Download, elapsed),
+	}
+	for _, conn := range next {
+		i, ok := byID[conn.ID]
+		if !ok {
+			continue
+		}
+		delete(byID, conn.ID)
+		if !sampleSpeeds {
+			continue
+		}
+		old := previous[i]
+		if conn.Start != old.Start || old.Upload < 0 || old.Download < 0 ||
+			conn.Upload < old.Upload || conn.Download < old.Download {
+			continue
+		}
+		a.connectionSpeeds[conn.ID] = connectionSpeed{
+			upload:   connectionBytesPerSecond(conn.Upload-old.Upload, elapsed),
+			download: connectionBytesPerSecond(conn.Download-old.Download, elapsed),
+		}
+	}
+	if len(byID) == 0 {
+		return
+	}
+
+	closed := make([]model.Connection, 0, min(maxClosedConnections, len(byID)+len(a.closedConnections)))
+	for _, conn := range previous {
+		if _, missing := byID[conn.ID]; missing {
+			closed = append(closed, conn)
+			if len(closed) == maxClosedConnections {
+				break
 			}
 		}
 	}
-	a.connections, a.connectionsError, a.connectionSampleAt = next, err, at
+	keep := min(len(a.closedConnections), maxClosedConnections-len(closed))
+	a.closedConnections = append(closed, a.closedConnections[:keep]...)
 }
 
 func connectionBytesPerSecond(bytes int64, elapsed time.Duration) int64 {
@@ -83,10 +118,10 @@ func (a *App) connectionSortKey(conn model.Connection, column int) tableSortKey 
 		return tableSortKey{number: uint64(max(0, conn.Upload))}
 	case connectionDownloadSpeedColumn:
 		speed, ok := a.connectionSpeeds[conn.ID]
-		return tableSortKey{number: uint64(speed.download), missing: !ok}
+		return tableSortKey{number: uint64(speed.download), missing: !ok || a.connectionTab == 1}
 	case connectionUploadSpeedColumn:
 		speed, ok := a.connectionSpeeds[conn.ID]
-		return tableSortKey{number: uint64(speed.upload), missing: !ok}
+		return tableSortKey{number: uint64(speed.upload), missing: !ok || a.connectionTab == 1}
 	case connectionRuleColumn:
 		text = connectionRule(conn)
 	case connectionStartColumn:
