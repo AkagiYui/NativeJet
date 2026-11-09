@@ -170,8 +170,10 @@ func (a *App) connectionColumnSettings(c *ui.Context) {
 	if button.Clicked() {
 		*open = !*open
 	}
+	button.Role(ui.RolePopUpButton).Expanded(*open)
 	ui.Popover(c, button, open, func() {
 		ui.Column(c).Width(224).Padding(8).Gap(5).Children(func() {
+			iconHeading(c, settingsIcon, "连接列表列设置", 13, 2)
 			muted(c, "拖动表头调整顺序，拖动列边缘调整宽度。")
 			prefs := &a.connectionTable
 			for _, column := range connectionColumns {
@@ -195,7 +197,7 @@ func (a *App) connectionColumnSettings(c *ui.Context) {
 				}
 			}
 			ui.Divider(c)
-			if action(c, nil, "恢复默认列设置", false).AlignSelf(ui.Start).Clicked() {
+			if action(c, undoIcon, "恢复默认列设置", false).AlignSelf(ui.Start).Clicked() {
 				a.applyConnectionTablePreferences(connectionTablePreferences{})
 				a.connectionTableSaveAt = c.Now().Add(connectionTableSaveDelay)
 			}

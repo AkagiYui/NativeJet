@@ -64,10 +64,10 @@ func (f *importForm) view(c *ui.Context) {
 	useWorkspaceTheme(c)
 	ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
 		if f.fromLink {
-			heading(c, "导入订阅", "请核对 Clash 链接提供的订阅地址。确认后下载并添加，应用配置需另行操作。")
+			heading(c, subscriptionIcon, "导入订阅", "请核对 Clash 链接提供的订阅地址。确认后下载并添加，应用配置需另行操作。")
 		} else {
-			heading(c, "添加配置", "订阅原文只读；文件和粘贴内容保存为可编辑的本地配置。")
-			ui.Segmented(c, &f.tab, "订阅地址", "添加文件", "粘贴内容")
+			heading(c, plusIcon, "添加配置", "订阅原文只读；文件和粘贴内容保存为可编辑的本地配置。")
+			iconSegments(c, &f.tab, "配置导入方式", iconChoice{"订阅地址", subscriptionIcon}, iconChoice{"添加文件", folderIcon}, iconChoice{"粘贴内容", pasteIcon})
 		}
 		ui.Column(c).FillWidth().Gap(5).Children(func() { muted(c, "配置名称"); ui.TextInput(c, &f.name).FillWidth().Label("配置名称") })
 		switch f.tab {
@@ -86,7 +86,7 @@ func (f *importForm) view(c *ui.Context) {
 			ui.Box(c).Grow(1)
 		case 1:
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
-				if ui.Button(c, "选择 YAML 文件").Disabled(f.busy).Clicked() {
+				if action(c, folderIcon, "选择 YAML 文件", false).Disabled(f.busy).Clicked() {
 					f.pick()
 				}
 				muted(c, f.path)
@@ -96,10 +96,10 @@ func (f *importForm) view(c *ui.Context) {
 			editor.View(c, f.editor).Grow(1).FillWidth()
 		case 2:
 			ui.Row(c).Gap(10).Children(func() {
-				if ui.Button(c, "从剪贴板粘贴").Disabled(f.busy).Clicked() {
+				if action(c, pasteIcon, "从剪贴板粘贴", false).Disabled(f.busy).Clicked() {
 					f.editor.Buffer.Reset(mygo.Clipboard.ReadText())
 				}
-				if ui.Button(c, "填入空白配置模板").Disabled(f.busy).Clicked() {
+				if action(c, configIcon, "填入空白配置模板", false).Disabled(f.busy).Clicked() {
 					f.editor.Buffer.Reset(configTemplate)
 				}
 			})
@@ -111,17 +111,17 @@ func (f *importForm) view(c *ui.Context) {
 		}
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
 			ui.Box(c).Grow(1)
-			if ui.Button(c, "取消").Disabled(f.busy).Clicked() {
+			if action(c, closeIcon, "取消", false).Disabled(f.busy).Clicked() {
 				f.win.Close()
 			}
-			label := "添加本地配置"
+			label, icon := "添加本地配置", plusIcon
 			if f.tab == 0 {
-				label = "下载并添加订阅"
+				label, icon = "下载并添加订阅", downloadIcon
 			}
 			if f.busy {
-				label = "正在处理…"
+				label, icon = "正在处理…", scanIcon
 			}
-			if ui.PrimaryButton(c, label).Disabled(f.busy).Clicked() {
+			if action(c, icon, label, true).Disabled(f.busy).Clicked() {
 				f.submit()
 			}
 		})
@@ -238,7 +238,7 @@ func (a *App) downloadDialog() {
 	window = mygo.NewWindow(mygo.WindowOptions{Title: "下载内核", Width: 700, Height: 440, Content: ui.View(func(c *ui.Context) {
 		useWorkspaceTheme(c)
 		ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
-			heading(c, "下载 Mihomo", "来源：MetaCubeX/mihomo · GitHub Releases")
+			heading(c, downloadIcon, "下载 Mihomo", "来源：MetaCubeX/mihomo · GitHub Releases")
 			if loading {
 				muted(c, "正在获取适合本机架构的稳定版本…")
 			} else if len(releases) == 0 {
@@ -265,14 +265,14 @@ func (a *App) downloadDialog() {
 			}
 			ui.Box(c).Grow(1)
 			ui.Row(c).FillWidth().Gap(10).Children(func() {
-				if ui.Button(c, "打开内核目录").Clicked() {
+				if action(c, folderIcon, "打开内核目录", false).Clicked() {
 					a.openDirectory()
 				}
 				ui.Box(c).Grow(1)
-				if ui.Button(c, "取消").Clicked() {
+				if action(c, closeIcon, "取消", false).Clicked() {
 					window.Close()
 				}
-				if ui.PrimaryButton(c, "下载并安装到目录").Disabled(loading || len(releases) == 0 || a.busy).Clicked() {
+				if action(c, downloadIcon, "下载并安装到目录", true).Disabled(loading || len(releases) == 0 || a.busy).Clicked() {
 					var id int64
 					for _, r := range releases {
 						if selected == r.Version+" · "+r.Name {

@@ -99,7 +99,7 @@ func (a *App) serviceTestsView(c *ui.Context) {
 			state.table.ScrollTo(0, ui.Start)
 		}
 		if run := state.run; run != nil {
-			if action(c, nil, "取消测试", false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
+			if action(c, closeIcon, "取消测试", false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
 				run.cancel()
 				run.cancel = nil
 			}
@@ -115,7 +115,7 @@ func (a *App) serviceTestsView(c *ui.Context) {
 	if runtime.GOOS == "darwin" {
 		modifier = "⌘"
 	}
-	linkHint := modifier + " 点击地址打开"
+	linkHint := modifier + " 点击地址，或聚焦后按回车打开"
 	problem := state.problem
 	if state.err != nil {
 		problem = state.err.Error()
@@ -160,22 +160,32 @@ func (a *App) serviceTestsView(c *ui.Context) {
 				Disabled(!ready || state.run != nil || a.busy).Label("重测 " + entry.Name).Tooltip(entry.Name + " · 单独重测").Cursor(ui.CursorPointer)
 			button.Children(func() {
 				serviceIconImage(c, entry)
-				ui.Text(c, entry.Name).FontSize(12).SingleLine().MinWidth(0)
-				if button.Hovered() && ready && state.run == nil && !a.busy {
-					ui.Icon(c, scanIcon).Size(12, 12).Shrink(0).TextColor(linkColor)
-				}
+				ui.Text(c, entry.Name).FontSize(12).SingleLine().Grow(1).MinWidth(0)
+				ui.Icon(c, scanIcon).Size(12, 12).Shrink(0)
 			})
 			if button.Clicked() {
 				a.startServiceTests(entry.ID)
 			}
 			return
 		case 1:
-			link := ui.ButtonBase(c.Key("site-" + entry.ID)).FillWidth().MinWidth(0).Justify(ui.Start).Cursor(ui.CursorPointer).
-				Label(entry.Site).Tooltip(entry.Site + "\n" + linkHint)
+			link := ui.ButtonBase(c.Key("site-" + entry.ID)).FillWidth().MinWidth(0).Gap(4).Justify(ui.Start).Cursor(ui.CursorPointer).
+				Role(ui.RoleLink).Label(entry.Site).Description(linkHint).Tooltip(entry.Site + "\n" + linkHint)
+			// A pointer release requires a modifier. Keyboard and assistive
+			// activation use the link's ordinary press action.
+			pointerRelease := ui.Local(link, "pointer-release", func() bool { return false })
+			link.HandleInput(func(ev ui.InputEvent) bool {
+				if ev.Kind == ui.InputPointerUp && ev.Button == 0 {
+					*pointerRelease = true
+				}
+				return false
+			})
 			link.Children(func() {
+				ui.Icon(c, externalLinkIcon).Size(12, 12).TextColor(linkColor).Shrink(0)
 				ui.Text(c, strings.TrimPrefix(entry.Site, "https://")).FontSize(12).SingleLine().MinWidth(0).TextColor(linkColor)
 			})
-			if link.Clicked() && link.ClickModifiers()&ui.Cmd != 0 {
+			fromPointer := *pointerRelease
+			*pointerRelease = false
+			if link.Clicked() && (!fromPointer || link.ClickModifiers()&ui.Cmd != 0) {
 				c.OpenURLThen(entry.Site, func(err error) {
 					if err != nil {
 						state.err = fmt.Errorf("无法打开服务地址：%w", err)

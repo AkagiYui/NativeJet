@@ -21,7 +21,8 @@ type metricsResult struct {
 
 func (a *App) metricsView(c *ui.Context) {
 	workspaceHeader(c, metricsIcon, metricsPage, func() {
-		ui.Tabs(c, &a.metricsTab, "概览", "节点", "规则", "集合").Shrink(0).Label("指标类别")
+		iconTabs(c, &a.metricsTab, "指标类别",
+			iconChoice{"概览", metricsIcon}, iconChoice{"节点", linkIcon}, iconChoice{"规则", listIcon}, iconChoice{"集合", layersIcon})
 	})
 	if !a.connected {
 		emptyState(c, metricsIcon, "后台服务未连接", "连接后台服务后即可读取内核指标。", nil)
@@ -86,12 +87,13 @@ func (a *App) metricsOverview(c *ui.Context, data model.Metrics) {
 				for _, card := range [...]struct {
 					title, value string
 					color        ui.Color
+					icon         *ui.SVG
 				}{
-					{"上传速率", rates.up, p.Accent}, {"累计上传", upTotal, p.Text}, {"内核内存 (RSS)", memory, p.Text},
-					{"下载速率", rates.down, p.Success}, {"累计下载", downTotal, p.Text}, {"活动连接", connections, p.Text},
+					{"上传速率", rates.up, p.Accent, uploadIcon}, {"累计上传", upTotal, p.Text, uploadIcon}, {"内核内存 (RSS)", memory, p.Text, kernelIcon},
+					{"下载速率", rates.down, p.Success, downloadIcon}, {"累计下载", downTotal, p.Text, downloadIcon}, {"活动连接", connections, p.Text, linkIcon},
 				} {
 					ui.Column(c).Padding(10, 12).Gap(4).MinWidth(0).Radius(controlRadius).Background(p.Surface).Border(1, p.line).Children(func() {
-						muted(c, card.title)
+						iconHeading(c, card.icon, card.title, 12, 2).TextColor(p.TextMuted)
 						ui.Text(c, card.value).FontSize(17).FontWeight(600).TextColor(card.color).SingleLine().
 							Label(card.title + " " + card.value)
 					})
@@ -101,11 +103,11 @@ func (a *App) metricsOverview(c *ui.Context, data model.Metrics) {
 				metricProblems(c, data.Problems)
 			}
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
-				ui.Text(c, "最近 5 分钟流量").FontWeight(600)
+				iconHeading(c, metricsIcon, "最近 5 分钟流量", 13, 2)
 				stateLabel(c, "上传", p.Accent)
 				stateLabel(c, "下载", p.Success)
 				ui.Box(c).Grow(1)
-				if action(c, nil, "查看连接", false).Clicked() {
+				if action(c, linkIcon, "查看连接", false).Clicked() {
 					a.page = "连接"
 				}
 			})

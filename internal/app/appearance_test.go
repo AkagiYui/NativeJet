@@ -31,8 +31,15 @@ func TestAppearancePreservesThemeWhenChangingTraySpeed(t *testing.T) {
 		}
 		tester.Key(0, ui.KeySpace)
 		wantLayout = menuBarSpeedOff
-	} else if err := tester.Click("双列（左右并排）"); err != nil {
-		t.Fatal(err)
+	} else {
+		tester.Key(0, ui.KeyTab)
+		if !tester.Focused("单列（上下排列）") {
+			t.Fatal("the active tray layout did not receive focus")
+		}
+		tester.Key(0, ui.KeyRight)
+		if !tester.Focused("双列（左右并排）") {
+			t.Fatal("Right arrow did not focus the next tray layout")
+		}
 	}
 	reloaded := &App{data: a.data}
 	reloaded.loadAppearance()

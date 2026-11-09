@@ -63,12 +63,12 @@ func (a *App) appearanceSettings(c *ui.Context) {
 		Role(ui.RoleGroup).Label("外观").Children(func() {
 		ui.Row(c.Key("theme")).FillWidth().Gap(16).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-				ui.Text(c, "主题").FontSize(15).FontWeight(600)
+				iconHeading(c, sunIcon, "主题", 15, 2)
 				muted(c, "选择 NativeJet 的浅色或深色外观。")
 			})
 			themes := []mygo.ThemeSource{mygo.ThemeSystem, mygo.ThemeLight, mygo.ThemeDark}
 			selected := max(0, slices.Index(themes, a.appearance.Theme))
-			if ui.Segmented(c, &selected, "跟随系统", "浅色", "深色").Label("主题").Changed() {
+			if iconSegments(c, &selected, "主题", iconChoice{"跟随系统", monitorIcon}, iconChoice{"浅色", sunIcon}, iconChoice{"深色", moonIcon}).Changed() {
 				prefs := a.appearance
 				prefs.Theme = themes[selected]
 				if a.saveAppearance(prefs) {

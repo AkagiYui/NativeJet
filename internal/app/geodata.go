@@ -88,7 +88,7 @@ func (a *App) geoDataView(c *ui.Context) {
 		}
 		for _, file := range data.Files {
 			ui.Divider(c)
-			ui.Text(c, geoLabels[file.Kind]).FontSize(13).FontWeight(600)
+			iconHeading(c, geoDataIcon, geoLabels[file.Kind], 13, 2)
 			source := file.URL
 			if source == "" && data.SourceError == "" {
 				source = "内核未报告"

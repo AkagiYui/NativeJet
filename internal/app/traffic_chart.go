@@ -16,7 +16,7 @@ func (a *App) trafficPanel(c *ui.Context) {
 	sample := a.currentTraffic()
 	ui.Column(c.Key("traffic-panel")).FillWidth().Shrink(0).Padding(10, 12, 12).Gap(7).
 		BorderWidth(1, 0, 0, 0).BorderColor(p.line).Role(ui.RoleGroup).Label("内核流量速率").Children(func() {
-		ui.Text(c, "流量速率").FontSize(12).FontWeight(600)
+		iconHeading(c, metricsIcon, "流量速率", 12, 2)
 		ui.Grid(c).FillWidth().ColumnTracks(ui.Fixed(38), ui.Fr(1), ui.Fr(1)).GapX(8).GapY(4).Children(func() {
 			ui.Box(c)
 			ui.Text(c, "实时速率").FontSize(10).TextColor(p.TextMuted).SingleLine()

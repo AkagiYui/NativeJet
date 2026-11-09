@@ -10,8 +10,6 @@ import (
 
 const proxiesPage = "策略组"
 
-var checkIcon = outlineIcon(`<path d="m5 12 4 4L19 6"/>`)
-
 func (a *App) proxiesView(c *ui.Context) {
 	workspaceHeader(c, proxiesIcon, proxiesPage, func() {
 		if a.connected && a.snapshot.Status.Running && a.groups != nil && a.proxiesError == nil {
@@ -78,7 +76,7 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 	ui.Column(c).FillWidth().Gap(gap).Children(func() {
 		ui.Row(c.Key("heading")).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-				ui.Text(c, group.Name).FontSize(15).FontWeight(600).SingleLine().Tooltip(group.Name)
+				iconHeading(c, proxiesIcon, group.Name, 15, 2).Tooltip(group.Name)
 				mode := "内核管理"
 				if manual {
 					mode = "手动选择"
@@ -93,7 +91,7 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 				current := "当前 · " + group.Now
 				ui.Text(c, current).FontSize(12).TextColor(p.TextMuted).MaxWidth(220).SingleLine().Tooltip(current)
 			}
-			if pinnable && group.Fixed != "" && action(c.Key("unpin"), nil, "解除固定", false).Disabled(a.busy).Clicked() {
+			if pinnable && group.Fixed != "" && action(c.Key("unpin"), unpinIcon, "解除固定", false).Disabled(a.busy).Clicked() {
 				a.request("proxies.unpin", map[string]string{"id": group.Name}, "已恢复自动选择", nil)
 			}
 		})
@@ -136,6 +134,9 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 					}
 					tile.Grow(1).MinWidth(0).FillHeight().Gap(4).PaddingX(5).AlignItems(ui.Center).
 						Tooltip(proxyMemberTooltip(name, pinnable, name == group.Fixed)).Children(func() {
+						if pinnable && !manual {
+							ui.Icon(c, pinIcon).Size(12, 12).TextColor(p.TextMuted).Shrink(0)
+						}
 						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 							weight := 400
 							if active {
@@ -155,7 +156,7 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 							ui.Icon(c, checkIcon).Size(14, 14).TextColor(p.Accent).Shrink(0)
 						}
 					})
-					if supported && ui.Button(c.Key("test"), "测速").Label("测速 "+name).
+					if supported && action(c.Key("test"), metricsIcon, "测速", false).Label("测速 "+name).
 						Shrink(0).Disabled(a.busy || a.proxyTest != nil).Clicked() {
 						a.startProxyTest(group, state, &name)
 					}
@@ -188,11 +189,11 @@ func (a *App) proxyTestControls(c *ui.Context, group model.Proxy, state *proxyGr
 			if run.name != "" {
 				label = "取消单节点测速"
 			}
-			if action(c.Key("cancel"), nil, label, false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
+			if action(c.Key("cancel"), closeIcon, label, false).Shrink(0).Disabled(run.cancel == nil).Clicked() {
 				run.cancel()
 				run.cancel = nil
 			}
-		} else if action(c.Key("test-all"), nil, "整组测速", false).Shrink(0).Disabled(a.busy || run != nil).Clicked() {
+		} else if action(c.Key("test-all"), metricsIcon, "整组测速", false).Shrink(0).Disabled(a.busy || run != nil).Clicked() {
 			a.startProxyTest(group, state, nil)
 		}
 	})

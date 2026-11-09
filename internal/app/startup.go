@@ -125,7 +125,7 @@ func (a *App) startupSettings(c *ui.Context) {
 	ui.Column(c.Key("startup-settings")).FillWidth().Padding(16).Gap(12).
 		Radius(8).Border(1, p.line).Background(p.Surface).
 		Role(ui.RoleGroup).Label("启动").Children(func() {
-		ui.Text(c, "启动").FontSize(15).FontWeight(600)
+		iconHeading(c, playIcon, "启动", 15, 2)
 		login := a.loginItem.status == platform.LoginItemOn || a.loginItem.status == platform.LoginItemRequiresApproval
 		description := "登录 " + platformName + " 后自动打开 NativeJet。"
 		switch {
@@ -136,11 +136,11 @@ func (a *App) startupSettings(c *ui.Context) {
 		case a.loginItem.status == platform.LoginItemUnavailable:
 			description = "系统无法读取 NativeJet 的登录项。"
 		}
-		if startupSwitch(c, "开机启动", description, &login, !a.loginItem.available || a.loginItem.status == platform.LoginItemUnavailable) {
+		if startupSwitch(c, playIcon, "开机启动", description, &login, !a.loginItem.available || a.loginItem.status == platform.LoginItemUnavailable) {
 			a.setLoginItem(login)
 		}
 		if a.loginItem.status == platform.LoginItemRequiresApproval || a.loginItem.problem != "" {
-			if action(c, nil, "打开系统登录项设置", false).AlignSelf(ui.Start).Clicked() {
+			if action(c, settingsIcon, "打开系统登录项设置", false).AlignSelf(ui.Start).Clicked() {
 				if _, err := loginItem("settings"); err != nil {
 					a.loginItem.problem = err.Error()
 				}
@@ -150,14 +150,14 @@ func (a *App) startupSettings(c *ui.Context) {
 			ui.Text(c, a.loginItem.problem).TextColor(p.Danger).Selectable()
 		}
 		prefs := a.startup
-		if startupSwitch(c, "启动时自动启动内核", "下次启动 NativeJet 时，连接后台服务后启动内核。需要已应用的配置及所需授权。", &prefs.AutoStartCore, false) {
+		if startupSwitch(c, kernelIcon, "启动时自动启动内核", "下次启动 NativeJet 时，连接后台服务后启动内核。需要已应用的配置及所需授权。", &prefs.AutoStartCore, false) {
 			a.saveStartup(prefs)
 		}
 		hideDescription := "下次启动时只显示" + trayName + "图标，可从" + trayName + "打开主窗口。"
 		if platformName == "Linux" && a.tray == nil {
 			hideDescription = "仅在桌面提供系统托盘时生效。当前桌面启动时会显示窗口。"
 		}
-		if startupSwitch(c, "启动时不显示窗口", hideDescription, &prefs.HideWindow, false) {
+		if startupSwitch(c, monitorIcon, "启动时不显示窗口", hideDescription, &prefs.HideWindow, false) {
 			a.saveStartup(prefs)
 		}
 		if a.startupError != "" {
@@ -166,13 +166,13 @@ func (a *App) startupSettings(c *ui.Context) {
 	})
 }
 
-func startupSwitch(c *ui.Context, title, description string, checked *bool, disabled bool) (changed bool) {
+func startupSwitch(c *ui.Context, icon *ui.SVG, title, description string, checked *bool, disabled bool) (changed bool) {
 	ui.Row(c.Key(title)).FillWidth().Gap(16).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-			ui.Text(c, title).FontWeight(600)
+			iconHeading(c, icon, title, 13, 3)
 			muted(c, description)
 		})
-		changed = ui.Switch(c, checked).Label(title).Shrink(0).Disabled(disabled).Changed()
+		changed = ui.Switch(c, checked).Label(title).Description(description).Shrink(0).Disabled(disabled).Changed()
 	})
 	return changed
 }

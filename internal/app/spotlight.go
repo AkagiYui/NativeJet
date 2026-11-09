@@ -18,24 +18,29 @@ const (
 
 var spotlightSteps = [...]struct {
 	page, title, detail string
+	icon                *ui.SVG
 	at, self            ui.Anchor
 }{
 	spotlightWelcome: {
 		title:  "欢迎使用 NativeJet",
+		icon:   brandOutline,
 		detail: "NativeJet 是一款 Mihomo / Clash.Meta 桌面客户端，可管理代理配置、切换策略组，并查看实时连接和流量。接下来三步会带你找到下载内核、添加配置和启动内核的入口。",
 	},
 	spotlightKernel: {
 		page: "内核", title: "准备 Mihomo 内核",
+		icon:   kernelIcon,
 		detail: "从这里下载 Mihomo。已有内核文件时，也可以放进内核目录，重新扫描后选用。",
 		at:     ui.AnchorBottomRight, self: ui.AnchorTopRight,
 	},
 	spotlightConfig: {
 		page: "配置", title: "添加并应用配置",
+		icon:   configIcon,
 		detail: "导入订阅地址、YAML 文件，或粘贴配置内容。添加后，点击右上角的「应用配置」。",
 		at:     ui.AnchorBottomRight, self: ui.AnchorTopRight,
 	},
 	spotlightStart: {
 		page: "配置", title: "启动并查看状态",
+		icon:   playIcon,
 		detail: "选好内核并应用配置后，在侧栏启动内核。启动后，这里会显示运行状态和停止按钮。",
 		at:     ui.AnchorRight, self: ui.AnchorLeft,
 	},
@@ -117,7 +122,7 @@ func (g *spotlightGuide) view(c *ui.Context) {
 						ui.Textf(c, "%d / %d", g.step, len(spotlightSteps)-1).Padding(3, 8).
 							Radius(999).Background(colors.Selection).TextColor(colors.Text).FontSize(11)
 					})
-					ui.Text(c, step.title).FontSize(19).FontWeight(600)
+					iconHeading(c, step.icon, step.title, 19, 1)
 					ui.Text(c, step.detail).FontSize(13).TextColor(colors.TextMuted)
 					g.controls(c, card)
 				})
@@ -128,21 +133,21 @@ func (g *spotlightGuide) view(c *ui.Context) {
 
 func (g *spotlightGuide) controls(c *ui.Context, card ui.Element) {
 	ui.Row(c).FillWidth().Padding(5, 0, 0).AlignItems(ui.Center).Gap(6).Children(func() {
-		skip := action(c.Key("guide-skip"), nil, "跳过", false)
+		skip := action(c.Key("guide-skip"), skipIcon, "跳过", false)
 		ui.Box(c).Grow(1)
 		var back ui.Element
 		if g.step != spotlightWelcome {
-			back = action(c.Key("guide-back"), nil, "上一步", false)
+			back = action(c.Key("guide-back"), arrowLeftIcon, "上一步", false)
 		}
 		last := g.step == len(spotlightSteps)-1
-		label := "下一步"
+		label, icon := "下一步", arrowRightIcon
 		switch {
 		case g.step == spotlightWelcome:
-			label = "开始引导"
+			label, icon = "开始引导", playIcon
 		case last:
-			label = "完成"
+			label, icon = "完成", checkIcon
 		}
-		next := action(c.Key("guide-next"), nil, label, true)
+		next := action(c.Key("guide-next"), icon, label, true)
 		switch {
 		case skip.Clicked():
 			g.dismiss(c)

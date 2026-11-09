@@ -90,9 +90,57 @@ func action(c *ui.Context, icon *ui.SVG, label string, primary bool) ui.Element 
 		b = ui.Button(c, "")
 	}
 	return b.Label(label).Height(controlHeight).Padding(0, 10).Gap(6).Children(func() {
-		if icon != nil {
-			ui.Icon(c, icon).Size(14, 14)
-		}
+		ui.Icon(c, icon).Size(14, 14).Shrink(0)
 		ui.Text(c, label).SingleLine().FontWeight(500)
+	})
+}
+
+type iconChoice struct {
+	label string
+	icon  *ui.SVG
+}
+
+func iconTabs(c *ui.Context, selected *int, label string, choices ...iconChoice) ui.Element {
+	t := c.Theme()
+	parts := ui.TabsBase(c, selected, len(choices))
+	return parts.List.Label(label).Gap(4).Children(func() {
+		for i, choice := range choices {
+			tab := parts.Tab(i).Label(choice.label).Height(34).PaddingX(8).Gap(5).Center().Radius(controlRadius)
+			tab.TextColor(t.TextMuted)
+			if i == *selected {
+				tab.TextColor(t.Text).FontWeight(600)
+				tab.DrawOver(func(p *ui.Painter, r ui.Rect) {
+					p.Fill(ui.Rect{X: r.X + 5, Y: r.Y + r.H - 2, W: r.W - 10, H: 2}, t.Accent, 1)
+				})
+			}
+			if tab.Hovered() {
+				tab.Background(t.SurfaceHover).TextColor(t.Text)
+			}
+			tab.Children(func() {
+				ui.Icon(c, choice.icon).Size(13, 13).Shrink(0)
+				ui.Text(c, choice.label).SingleLine()
+			})
+		}
+	})
+}
+
+func iconSegments(c *ui.Context, selected *int, label string, choices ...iconChoice) ui.Element {
+	t := c.Theme()
+	parts := ui.SegmentedBase(c, selected, len(choices))
+	return parts.Track.Label(label).Padding(2).Gap(2).Radius(controlRadius).
+		Background(t.Surface).Border(1, t.Border).Children(func() {
+		for i, choice := range choices {
+			segment := parts.Segment(i).Label(choice.label).Height(26).PaddingX(8).Gap(5).Radius(4)
+			switch {
+			case i == *selected:
+				segment.Background(t.Selection).FontWeight(600)
+			case segment.Hovered():
+				segment.Background(t.SurfaceHover)
+			}
+			segment.Children(func() {
+				ui.Icon(c, choice.icon).Size(13, 13).Shrink(0)
+				ui.Text(c, choice.label).SingleLine()
+			})
+		}
 	})
 }

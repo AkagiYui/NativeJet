@@ -92,6 +92,13 @@ func TestServiceAddressRequiresCommandClick(t *testing.T) {
 	if got := tester.OpenedURLs(); len(got) != 1 || got[0] != site {
 		t.Fatalf("command-click opened %v", got)
 	}
+	if !tester.Focused(site) {
+		t.Fatal("the service address did not receive keyboard focus")
+	}
+	tester.Key(0, ui.KeyEnter)
+	if got := tester.OpenedURLs(); len(got) != 2 || got[1] != site {
+		t.Fatalf("Enter on the focused address opened %v", got)
+	}
 }
 
 func TestPagesShareOneBottomEdge(t *testing.T) {
@@ -129,6 +136,10 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		bar := bounds("应用状态栏")
 		if bar.X != 0 || bar.W != float32(window.w) || bar.Y+bar.H != float32(window.h) {
 			t.Fatalf("status bar does not span the window bottom: %v", bar)
+		}
+		settings, status := bounds("设置"), bounds("内核状态")
+		if settings.Y+settings.H > status.Y {
+			t.Errorf("settings navigation %v overlaps the kernel status %v", settings, status)
 		}
 		for _, page := range []struct {
 			name, content string
@@ -217,6 +228,10 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 	}
 	if a.metricsTab != 2 || bounds("规则指标").Y != toolbarHeight {
 		t.Error("rules tab did not open the rules table immediately below the toolbar")
+	}
+	tester.Key(0, ui.KeyLeft)
+	if a.metricsTab != 1 || !tester.Focused("节点") {
+		t.Error("Left arrow did not select and focus the preceding metrics tab")
 	}
 	tester.SetTitleBar(ui.TitleBar{})
 

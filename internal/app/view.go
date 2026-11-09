@@ -21,11 +21,11 @@ func (a *App) configView(c *ui.Context) {
 			Disabled(a.busy || !a.connected).Clicked() {
 			a.addConfig()
 		}
-		if action(c, nil, "历史版本", false).Disabled(a.busy).Clicked() {
+		if action(c, historyIcon, "历史版本", false).Disabled(a.busy).Clicked() {
 			a.history()
 		}
 		disabled := a.busy || !a.connected || a.current() == nil
-		if action(c, nil, "应用配置", true).Disabled(disabled).Clicked() {
+		if action(c, checkIcon, "应用配置", true).Disabled(disabled).Clicked() {
 			a.apply()
 		}
 	})
@@ -33,7 +33,7 @@ func (a *App) configView(c *ui.Context) {
 		a.profileRow(c)
 	}
 	commandRow(c, func() {
-		if ui.Tabs(c, &a.tab, "原始配置", "覆盖配置", "最终配置").Changed() && a.tab == 2 && a.dirty() {
+		if iconTabs(c, &a.tab, "配置视图", iconChoice{"原始配置", configIcon}, iconChoice{"覆盖配置", layersIcon}, iconChoice{"最终配置", listIcon}).Changed() && a.tab == 2 && a.dirty() {
 			a.refreshPreview(false)
 		}
 		ui.Box(c).Grow(1)
@@ -93,13 +93,13 @@ func (a *App) profileRow(c *ui.Context) {
 				stateLabel(c, "已应用", c.Theme().Success)
 			}
 			if p.Kind == "subscription" {
-				if ui.Button(c, "更新订阅").Disabled(a.busy).Clicked() {
+				if action(c, scanIcon, "更新订阅", false).Disabled(a.busy).Clicked() {
 					a.request("profile.update", map[string]string{"id": p.ID}, "订阅已更新，运行配置保持不变", func(_ json.RawMessage) { a.accept(a.snapshot, false) })
 				}
-			} else if ui.Button(c, "导出原文").Disabled(a.busy).Clicked() {
+			} else if action(c, downloadIcon, "导出原文", false).Disabled(a.busy).Clicked() {
 				a.exportProfile()
 			}
-			if ui.Button(c, "删除").Disabled(a.busy || a.dirty() || p.ID == a.snapshot.State.ActiveProfile).Clicked() {
+			if action(c, trashIcon, "删除", false).Label("删除配置 " + p.Name).Disabled(a.busy || a.dirty() || p.ID == a.snapshot.State.ActiveProfile).Clicked() {
 				a.deleteProfile(*p)
 			}
 		}
@@ -125,14 +125,14 @@ func (a *App) sourceView(c *ui.Context) {
 		}
 		ui.Box(c).Grow(1)
 		if p.Kind == "local" {
-			if ui.Button(c, "撤销修改").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
+			if action(c, undoIcon, "撤销修改", false).Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
 				a.source.Buffer.Reset(a.savedSource)
 				a.source.Buffer.MarkSaved()
 			}
-			if ui.PrimaryButton(c, "保存配置").Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
+			if action(c, saveIcon, "保存配置", true).Disabled(a.busy || !a.source.Buffer.Modified()).Clicked() {
 				a.saveSource()
 			}
-		} else if ui.Button(c, "创建本地副本").Disabled(a.busy || a.dirty()).Clicked() {
+		} else if action(c, copyIcon, "创建本地副本", false).Disabled(a.busy || a.dirty()).Clicked() {
 			copy := *p
 			copy.ID = ""
 			copy.Kind = "local"
@@ -154,18 +154,18 @@ func (a *App) finalView(c *ui.Context) {
 	input := a.currentPreviewInput()
 	ready := input.profile != "" && a.previewInput == input && a.previewError == nil && a.connected
 	commandRow(c, func() {
-		ui.Segmented(c, &a.format, "字段与来源", "YAML").Label("最终配置视图")
+		iconSegments(c, &a.format, "最终配置视图", iconChoice{"字段与来源", listIcon}, iconChoice{"YAML", codeIcon})
 		muted(c, "已隐藏常见敏感值")
 		ui.Box(c).Grow(1)
 		if ready && a.preview.Hash != "" {
-			if action(c.Key("copy-hash"), nil, "复制 SHA-256", false).Tooltip(a.preview.Hash).Clicked() {
+			if action(c.Key("copy-hash"), copyIcon, "复制 SHA-256", false).Tooltip(a.preview.Hash).Clicked() {
 				mygo.Clipboard.WriteText(a.preview.Hash)
 			}
 		}
 		if action(c, scanIcon, "刷新预览", false).Disabled(a.busy || !a.connected || a.current() == nil).Clicked() {
 			a.refreshPreview(true)
 		}
-		if action(c, nil, "与已应用版本比较", false).Disabled(a.busy || a.snapshot.State.ActiveRevision == "" || !ready).Clicked() {
+		if action(c, compareIcon, "与已应用版本比较", false).Disabled(a.busy || a.snapshot.State.ActiveRevision == "" || !ready).Clicked() {
 			a.showDiff()
 		}
 	})
@@ -199,7 +199,7 @@ func (a *App) finalView(c *ui.Context) {
 				}
 				ui.Text(c, text).FontSize(12).SingleLine().Tooltip(text)
 			})
-			inspector(c, "字段来源", nil, func() {
+			inspector(c, layersIcon, "字段来源", nil, func() {
 				detailScroll(c, func() {
 					if a.field < 0 || a.field >= len(a.preview.Fields) {
 						muted(c, "选择一个字段查看其来源。")
@@ -312,9 +312,9 @@ func (a *App) kernelView(c *ui.Context) {
 			selection = 0
 		}
 		k := kernels[selection]
-		inspector(c, "内核详情", func() {
+		inspector(c, kernelIcon, "内核详情", func() {
 			disabled := a.busy || k.Error != "" || status.Running || k.ID == a.snapshot.State.SelectedKernel
-			if action(c, nil, "使用所选内核", true).Disabled(disabled).Clicked() {
+			if action(c, checkIcon, "使用所选内核", true).Disabled(disabled).Clicked() {
 				a.request("kernel.select", map[string]string{"id": k.ID}, "内核已选用", nil)
 			}
 		}, func() {
@@ -344,23 +344,31 @@ func (a *App) connectionsView(c *ui.Context) {
 	running := a.coreRunning()
 	ready := running && a.connections != nil && a.connectionsError == nil
 	workspaceHeader(c, linkIcon, "连接", func() {
-		if ui.Tabs(c, &a.connectionTab, "活动", "已关闭").Shrink(0).Label("连接状态").Changed() {
+		if iconTabs(c, &a.connectionTab, "连接状态", iconChoice{"活动", metricsIcon}, iconChoice{"已关闭", historyIcon}).Changed() {
 			a.connectionIndex = -1
 			a.connectionRows.ScrollTo(0, ui.Start)
 		}
 		closed := a.connectionTab == 1
-		if closed {
-			muted(c, fmt.Sprintf("%d 条记录", len(a.closedConnections)))
-		} else if ready {
-			muted(c, fmt.Sprintf("%d 个活动连接", len(a.connections.Connections)))
+		if closed || ready {
+			n, format := len(a.closedConnections), "%d 条记录"
+			if !closed {
+				n, format = len(a.connections.Connections), "%d 个活动连接"
+			}
+			summary := fmt.Sprintf(format, n)
+			display := summary
+			if width, _ := c.Size(); width-sidebarWidth-c.TitleBar().Right < 630 {
+				display = fmt.Sprint(n)
+			}
+			ui.Text(c, display).FontSize(12).TextColor(c.Theme().TextMuted).
+				SingleLine().MinWidth(0).Label(summary).Tooltip(summary)
 		}
 		ui.TextInput(c.Key("connection-search"), &a.search).Placeholder("搜索主机、地址、进程、规则或策略").
 			Width(248).MinWidth(120).Shrink(1).Height(controlHeight).Label("搜索连接").Disabled(!closed && !ready)
 		if closed {
-			if action(c.Key("clear-history"), nil, "清空历史", false).Shrink(0).Disabled(len(a.closedConnections) == 0).Clicked() {
+			if action(c.Key("clear-history"), trashIcon, "清空历史", false).Shrink(0).Disabled(len(a.closedConnections) == 0).Clicked() {
 				a.closedConnections = nil
 			}
-		} else if action(c.Key("close-all-connections"), nil, "关闭全部", false).Shrink(0).Disabled(!ready || a.busy).Clicked() {
+		} else if action(c.Key("close-all-connections"), stopIcon, "关闭全部", false).Shrink(0).Disabled(!ready || a.busy).Clicked() {
 			a.request("connections.closeAll", nil, "连接已关闭", nil)
 		}
 		a.connectionColumnSettings(c)
@@ -425,8 +433,8 @@ func (a *App) connectionsView(c *ui.Context) {
 		if a.connectionIndex >= 0 && a.connectionIndex < len(rows) {
 			selected = &rows[a.connectionIndex]
 		}
-		inspector(c, "连接详情", func() {
-			if !closed && selected != nil && action(c, nil, "关闭此连接", false).Disabled(a.busy).Clicked() {
+		inspector(c, linkIcon, "连接详情", func() {
+			if !closed && selected != nil && action(c, closeIcon, "关闭此连接", false).Disabled(a.busy).Clicked() {
 				a.request("connections.close", map[string]string{"id": selected.ID}, "连接已关闭", nil)
 			}
 		}, func() {
@@ -463,11 +471,11 @@ func (a *App) logsView(c *ui.Context) {
 		ui.Text(c, fmt.Sprintf("%d / %d 条", len(rows), len(a.logs))).FontSize(11).
 			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0).Label(summary).
 			Tooltip(summary + "\n最多保留 2000 条，暂停只停止拉取。")
-		button, label := "暂停", "暂停显示"
+		button, label, icon := "暂停", "暂停显示", pauseIcon
 		if a.paused {
-			button, label = "继续", "继续显示"
+			button, label, icon = "继续", "继续显示", playIcon
 		}
-		if action(c.Key("pause"), nil, button, false).Shrink(0).Label(label).Tooltip(label).Clicked() {
+		if action(c.Key("pause"), icon, button, false).Shrink(0).Label(label).Tooltip(label).Clicked() {
 			a.paused = !a.paused
 		}
 		if action(c.Key("export"), downloadIcon, "导出", false).Shrink(0).Label("导出日志").Tooltip("导出日志").Clicked() {
@@ -512,7 +520,7 @@ func (a *App) logsView(c *ui.Context) {
 				}
 			})
 			if a.logSelection < 0 || a.logSelection >= len(rows) {
-				inspector(c, "完整日志", nil, func() {
+				inspector(c, logIcon, "完整日志", nil, func() {
 					detailScroll(c, func() { muted(c, "选择一条日志查看完整内容。") })
 				})
 				return
@@ -523,8 +531,8 @@ func (a *App) logsView(c *ui.Context) {
 				a.logDetail.Buffer.Reset(l.Message)
 				a.logDetailSequence = l.Sequence
 			}
-			inspector(c, "完整日志", func() {
-				if action(c, nil, "复制这条日志", false).Clicked() {
+			inspector(c, logIcon, "完整日志", func() {
+				if action(c, copyIcon, "复制这条日志", false).Clicked() {
 					mygo.Clipboard.WriteText(l.Time.Local().Format(time.RFC3339) + " [" + l.Level + "] [" + logSourceLabel(l.Source) + "]\n" + l.Message)
 				}
 			}, func() {
@@ -561,8 +569,7 @@ func (a *App) settingsView(c *ui.Context) {
 			ui.Column(c).FillWidth().Padding(16).Gap(12).Radius(8).Border(1, p.line).Background(p.Surface).
 				Role(ui.RoleGroup).Label("后台服务").Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Icon(c, serviceIcon).Size(17, 17).TextColor(p.TextMuted)
-					ui.Text(c, "NativeJet Helper").FontSize(15).FontWeight(600)
+					iconHeading(c, serviceIcon, "NativeJet Helper", 15, 2)
 					ui.Box(c).Grow(1)
 					switch {
 					case a.connected && a.snapshot.Status.Privileged:
@@ -596,10 +603,10 @@ func (a *App) settingsView(c *ui.Context) {
 							label = "授权所选内核"
 						}
 					}
-					if action(c, nil, label, true).Disabled(a.busy).Clicked() {
+					if action(c, serviceIcon, label, true).Disabled(a.busy).Clicked() {
 						a.installService(false, a.snapshot.State.SelectedKernel, nil)
 					}
-					if action(c, nil, "卸载后台服务，保留配置", false).
+					if action(c, trashIcon, "卸载后台服务，保留配置", false).
 						Disabled(a.busy || a.registration == nil || !a.connected || a.snapshot.Status.Running).Clicked() {
 						a.installService(true, "", nil)
 					}
@@ -611,10 +618,10 @@ func (a *App) settingsView(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(16).Gap(16).AlignItems(ui.Center).Radius(8).Border(1, p.line).Background(p.Surface).
 				Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-						ui.Text(c, "Clash 订阅链接").FontSize(15).FontWeight(600)
+						iconHeading(c, subscriptionIcon, "Clash 订阅链接", 15, 2)
 						muted(c, "将网页上的 Clash 一键导入链接交给 NativeJet 打开。")
 					})
-					if action(c, nil, "将 NativeJet 设为 Clash 链接默认应用", false).Shrink(0).Disabled(a.busy).Clicked() {
+					if action(c, subscriptionIcon, "将 NativeJet 设为 Clash 链接默认应用", false).Shrink(0).Disabled(a.busy).Clicked() {
 						if err := mygo.App.RegisterURLScheme("clash"); err != nil {
 							a.problem = linkError
 						} else {
@@ -668,7 +675,7 @@ func (a *App) history() {
 	window = mygo.NewWindow(mygo.WindowOptions{Title: "配置历史", Width: 720, Height: 520, Content: ui.View(func(c *ui.Context) {
 		useWorkspaceTheme(c)
 		ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
-			heading(c, "配置历史", "恢复会应用当时的原文与覆盖。")
+			heading(c, historyIcon, "配置历史", "恢复会应用当时的原文与覆盖。")
 			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Gap(10).Children(func() {
 					for i := len(a.snapshot.State.Revisions) - 1; i >= 0; i-- {
@@ -684,7 +691,7 @@ func (a *App) history() {
 							})
 							if r.ID == a.snapshot.State.ActiveRevision {
 								stateLabel(c, "当前版本", c.Theme().Success)
-							} else if ui.Button(c, "恢复并应用").Disabled(a.busy || a.dirty()).Clicked() {
+							} else if action(c, undoIcon, "恢复并应用", false).Label("恢复并应用版本 " + short(r.ID)).Disabled(a.busy || a.dirty()).Clicked() {
 								a.request("config.restore", map[string]string{"id": r.ID}, "历史版本已恢复", nil)
 								window.Close()
 							}
@@ -710,7 +717,7 @@ func (a *App) showDiff() {
 		mygo.NewWindow(mygo.WindowOptions{Title: "已应用版本 → 当前预览", Width: 1000, Height: 700, Content: ui.View(func(c *ui.Context) {
 			useWorkspaceTheme(c)
 			ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
-				ui.Text(c, "已应用版本 → 当前预览（敏感值已隐藏）").Bold()
+				iconHeading(c, compareIcon, "已应用版本 → 当前预览（敏感值已隐藏）", 15, 1)
 				editor.DiffView(c, diff).Grow(1).FillWidth()
 			})
 		})})
