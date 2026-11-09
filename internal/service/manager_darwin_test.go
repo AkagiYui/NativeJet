@@ -124,9 +124,16 @@ func fixtureCore() {
 			w.(http.Flusher).Flush()
 			<-r.Context().Done()
 		case "/proxies":
-			fmt.Fprintln(w, `{"proxies":{"configured":{"type":"Shadowsocks","history":[{"delay":81}]}}}`)
+			fmt.Fprintln(w, `{"proxies":{
+				"configured":{"type":"Shadowsocks","history":[{"delay":81}]},
+				"route":{"type":"Selector","all":["configured"]}
+			}}`)
 		case "/providers/proxies":
-			fmt.Fprintln(w, `{"providers":{"subscription":{"testUrl":"https://example.com","proxies":[{"name":"provided","history":[{"delay":72}],"extra":{"https://example.com":{"alive":false,"history":[{"delay":0}]}}}],"subscriptionInfo":{"Upload":100,"Download":200,"Total":800}}}}`)
+			fmt.Fprintln(w, `{"providers":{
+				"default":{"proxies":[{"name":"configured","type":"Shadowsocks"}]},
+				"nested":{"vehicleType":"Compatible","proxies":[{"name":"configured","type":"Shadowsocks"},{"name":"route","type":"Selector","all":["configured"]}]},
+				"subscription":{"vehicleType":"HTTP","testUrl":"https://example.com","proxies":[{"name":"provided","history":[{"delay":72}],"extra":{"https://example.com":{"alive":false,"history":[{"delay":0}]}}}],"subscriptionInfo":{"Upload":100,"Download":200,"Total":800}}
+			}}`)
 		case "/rules":
 			fmt.Fprintln(w, `{"rules":[{"type":"DOMAIN","extra":{"hitCount":8,"missCount":2}},{"type":"MATCH"}]}`)
 		default:

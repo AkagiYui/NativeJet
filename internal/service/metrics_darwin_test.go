@@ -65,16 +65,22 @@ func TestMetricsFromRunningController(t *testing.T) {
 		t.Fatalf("expected real RSS and a valid zero connection count: %+v", overview)
 	}
 	nodes := sample(model.MetricsNodes)
-	if len(nodes.Nodes) != 2 || len(nodes.Nodes[1].History) != 1 || nodes.Nodes[1].History[0].Delay != 0 ||
-		nodes.Nodes[1].Alive == nil || *nodes.Nodes[1].Alive || nodes.Nodes[1].TestURL != "https://example.com" {
-		t.Fatalf("expected the provider-specific probe, including failures: %+v", nodes.Nodes)
+	if len(nodes.Nodes) != 2 || nodes.Nodes[0].Name != "configured" || nodes.Nodes[0].Provider != "" ||
+		nodes.Nodes[1].Name != "provided" || nodes.Nodes[1].Provider != "subscription" {
+		t.Fatalf("expected configured and subscription nodes without internal provider copies: %+v", nodes.Nodes)
+	}
+	provided := nodes.Nodes[1]
+	if len(provided.History) != 1 || provided.History[0].Delay != 0 ||
+		provided.Alive == nil || *provided.Alive || provided.TestURL != "https://example.com" {
+		t.Fatalf("expected the provider-specific probe, including failures: %+v", provided)
 	}
 	rules := sample(model.MetricsRules)
 	if len(rules.Rules) != 2 || rules.Rules[0].Extra == nil || rules.Rules[0].Extra.HitCount != 8 || rules.Rules[1].Extra != nil {
 		t.Fatalf("expected rule counts only where reported: %+v", rules.Rules)
 	}
 	providers := sample(model.MetricsProviders)
-	if len(providers.Providers) != 1 || providers.Providers[0].Count != 1 || providers.Providers[0].Subscription == nil ||
+	if len(providers.Providers) != 1 || providers.Providers[0].Name != "subscription" ||
+		providers.Providers[0].Count != 1 || providers.Providers[0].Subscription == nil ||
 		providers.Providers[0].Subscription.Total != 800 || len(providers.Problems) != 1 || providers.Problems[0] != "规则集" {
 		t.Fatalf("expected proxy quota despite an unsupported rule provider endpoint: %+v", providers)
 	}

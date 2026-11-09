@@ -27,6 +27,7 @@ type metricProxy struct {
 }
 
 type metricProxyProvider[P any] struct {
+	VehicleType  string                   `json:"vehicleType"`
 	Proxies      []P                      `json:"proxies"`
 	TestURL      string                   `json:"testUrl"`
 	UpdatedAt    time.Time                `json:"updatedAt"`
@@ -115,8 +116,8 @@ func (m *Manager) nodeMetrics(ctx context.Context, out *model.Metrics) {
 	}](ctx, m, "/providers/proxies")
 	if metricOK(out, "代理集节点", err) {
 		for name, provider := range providers.Providers {
-			if name == "default" {
-				continue // Mihomo's built-in provider repeats the configured proxies.
+			if isInternalProxyProvider(name, provider.VehicleType) {
+				continue
 			}
 			for _, proxy := range provider.Proxies {
 				out.Nodes = append(out.Nodes, proxy.node(proxy.Name, name, provider.TestURL))
@@ -142,7 +143,7 @@ func (m *Manager) providerMetrics(ctx context.Context, out *model.Metrics) {
 	}](ctx, m, "/providers/proxies")
 	if metricOK(out, "代理集", err) {
 		for name, provider := range proxies.Providers {
-			if name != "default" {
+			if !isInternalProxyProvider(name, provider.VehicleType) {
 				out.Providers = append(out.Providers, model.ProviderMetric{
 					Name: name, Count: len(provider.Proxies), UpdatedAt: provider.UpdatedAt, Subscription: provider.Subscription,
 				})

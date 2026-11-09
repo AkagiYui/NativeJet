@@ -92,6 +92,11 @@ type proxyDelayTarget struct {
 	path string
 }
 
+func isInternalProxyProvider(name, vehicleType string) bool {
+	// Mihomo wraps existing nodes and groups in Compatible providers.
+	return name == "default" || vehicleType == "Compatible"
+}
+
 func proxyDelayTargets(names []string, catalog proxyDelayCatalog, providers proxyDelayProviders, scope map[string]bool) ([]proxyDelayTarget, map[string]model.ProxyDelay) {
 	paths := make(map[string]string, len(names))
 	for _, name := range names {
@@ -100,8 +105,7 @@ func proxyDelayTargets(names []string, catalog proxyDelayCatalog, providers prox
 		}
 	}
 	for provider, entry := range providers.Providers {
-		// Compatible providers repeat nodes and groups from /proxies.
-		if entry.VehicleType == "Compatible" || provider == "default" || (scope != nil && !scope[provider]) {
+		if isInternalProxyProvider(provider, entry.VehicleType) || (scope != nil && !scope[provider]) {
 			continue
 		}
 		for _, node := range entry.Proxies {
