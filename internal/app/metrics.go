@@ -64,7 +64,7 @@ func (a *App) metricsView(c *ui.Context) {
 	case model.MetricsNodes:
 		metricsNodes(c.Key("nodes"), &a.nodeMetricsTable, data.Nodes, len(data.Problems) != 0)
 	case model.MetricsRules:
-		metricsRules(c.Key("rules"), &a.ruleMetricsTable, data.Rules, len(data.Problems) != 0)
+		a.metricsRules(c.Key("rules"), data.Rules, len(data.Problems) != 0)
 	case model.MetricsProviders:
 		metricsProviders(c.Key("providers"), &a.providerMetricsTable, data.Providers, len(data.Problems) != 0)
 	}
@@ -174,7 +174,7 @@ func metricsNodes(c *ui.Context, state *metricTableState, nodes []model.NodeMetr
 	})
 }
 
-func metricsRules(c *ui.Context, state *metricTableState, rules []model.RuleMetric, unavailable bool) {
+func (a *App) metricsRules(c *ui.Context, rules []model.RuleMetric, unavailable bool) {
 	if len(rules) == 0 {
 		metricEmpty(c, "暂无规则", unavailable)
 		return
@@ -184,7 +184,7 @@ func metricsRules(c *ui.Context, state *metricTableState, rules []model.RuleMetr
 		{Title: "命中", Width: 64, Align: ui.End}, {Title: "未命中", Width: 64, Align: ui.End},
 		{Title: "最近命中", Width: 124}, {Title: "最近未命中", Width: 124},
 	}
-	metricTable(c, state, columns, "规则指标", rules, ruleSortKey, func(rule model.RuleMetric, col int) {
+	metricTable(c, &a.ruleMetricsTable, columns, "规则指标", rules, ruleSortKey, func(rule model.RuleMetric, col int) {
 		name := fmt.Sprintf("%d · %s", rule.Index+1, rule.Type)
 		if rule.Payload != "" {
 			name += " · " + rule.Payload
@@ -196,6 +196,18 @@ func metricsRules(c *ui.Context, state *metricTableState, rules []model.RuleMetr
 		if extra := rule.Extra; extra != nil {
 			values[2], values[3] = strconv.FormatUint(extra.HitCount, 10), strconv.FormatUint(extra.MissCount, 10)
 			values[4], values[5] = metricTime(extra.HitAt), metricTime(extra.MissAt)
+		}
+		if col == 2 {
+			button := ui.ButtonBase(c.Key("hits-" + strconv.Itoa(rule.Index))).FillWidth().MinWidth(0).Gap(4).Justify(ui.End).
+				Cursor(ui.CursorPointer).Label(fmt.Sprintf("查看第 %d 条规则的命中日志", rule.Index+1)).Tooltip("查看命中日志")
+			button.Children(func() {
+				ui.Icon(c, logIcon).Size(12, 12).TextColor(palette(c).Accent).Shrink(0)
+				ui.Text(c, values[2]).FontSize(12).SingleLine().TextColor(palette(c).Accent).Underline()
+			})
+			if button.Clicked() {
+				a.openRuleLogs(rule)
+			}
+			return
 		}
 		metricText(c, values[col])
 	})

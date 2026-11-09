@@ -101,6 +101,64 @@ func TestServiceAddressRequiresCommandClick(t *testing.T) {
 	}
 }
 
+func TestRuleHitsOpenLiveFilteredLogs(t *testing.T) {
+	a, err := New(Options{Data: t.TempDir(), Helper: "/unused", Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.connected, a.snapshot.Status.Running = true, true
+	a.page, a.metricsTab = metricsPage, 2
+	a.metrics[2] = &metricsResult{data: model.Metrics{Rules: []model.RuleMetric{
+		{Index: 0, Type: "DomainSuffix", Payload: "example.test", Proxy: "DIRECT", Extra: &model.RuleCounts{HitCount: 20}},
+		{Index: 1, Type: "DomainSuffix", Payload: "example.test", Proxy: "Group", Extra: &model.RuleCounts{HitCount: 3}},
+	}}}
+	a.paused, a.logSearch, a.logLevel, a.logSource = true, "old query", "error", "后台服务"
+	const hit = "[TCP] 127.0.0.1:1234(browser) --> one.example.test:443 match DomainSuffix(example.test) using Group[Node]"
+	a.appendLogs([]model.Log{
+		{Sequence: 1, Source: "core", Level: "info", Message: hit},
+		{Sequence: 2, Source: "process", Level: "info", Message: hit},
+		{Sequence: 3, Source: "core", Level: "info", Message: strings.Replace(hit, "DomainSuffix", "Domain", 1)},
+		{Sequence: 4, Source: "core", Level: "info", Message: strings.Replace(hit, "(example.test)", "(other.example.test)", 1)},
+		{Sequence: 5, Source: "core", Level: "info", Message: strings.Replace(hit, "Group[Node]", "DIRECT", 1)},
+	})
+	tester := ui.NewTester(a.view, 920, 640)
+	if err := tester.Click("查看第 2 条规则的命中日志"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if a.page != "日志" || a.paused || a.logSelected != 1 || a.logDetail.Buffer.String() != hit ||
+		a.logSearch != "match DomainSuffix(example.test) using Group" || a.logSource != "内核日志" ||
+		a.logLevel != "info" || !tester.HasText("匹配 1 条 / 缓存 5 条") {
+		t.Fatalf("rule shortcut did not reveal the matching log, page=%q selected=%d texts=%v", a.page, a.logSelected, tester.Texts())
+	}
+	if bounds, ok := tester.Find("日志列表"); !ok || bounds.Y != toolbarHeight {
+		t.Fatalf("log list is not directly below the toolbar: %v", bounds)
+	}
+	next := strings.Replace(hit, "one.example.test", "two.example.test", 1)
+	a.appendLogs([]model.Log{{Sequence: 6, Source: "core", Level: "info", Message: next}})
+	tester.Frame()
+	if a.logSelected != 1 || !tester.HasText("匹配 2 条 / 缓存 6 条") {
+		t.Fatal("incoming rule log did not appear alongside the selected record")
+	}
+	if err := tester.Click(next); err != nil || a.logSelected != 6 || a.logDetail.Buffer.String() != next {
+		t.Fatalf("new match could not be inspected: selected=%d err=%v", a.logSelected, err)
+	}
+	if err := tester.Click("搜索日志"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Key(ui.Cmd, ui.KeyA)
+	tester.Key(0, ui.KeyBackspace)
+	if a.logSearch != "" || !tester.HasText("匹配 5 条 / 缓存 6 条") {
+		t.Fatalf("clearing the search did not restore all core logs: query=%q texts=%v", a.logSearch, tester.Texts())
+	}
+	if err := tester.Click("日志来源"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tester.Click("启动输出"); err != nil || a.logSource != "启动输出" || !tester.HasText("匹配 1 条 / 缓存 6 条") {
+		t.Fatalf("changing the log source did not reveal process output: source=%q err=%v", a.logSource, err)
+	}
+}
+
 func TestPagesShareOneBottomEdge(t *testing.T) {
 	a, err := New(Options{Data: t.TempDir(), Helper: "/unused", Development: true})
 	if err != nil {

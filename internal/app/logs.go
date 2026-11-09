@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/egoist/mygo/ui"
 	"nativejet/internal/model"
 )
 
@@ -49,7 +50,8 @@ func (a *App) filteredLogs() []model.Log {
 	slices.Reverse(rows)
 	return rows
 }
-func (a *App) openLogs() {
+
+func (a *App) showLogs() {
 	a.page = "日志"
 	a.paused = false
 	a.logSearch = ""
@@ -57,6 +59,31 @@ func (a *App) openLogs() {
 	a.logSource = "全部来源"
 	a.logSelected = 0
 	a.logSelection = -1
+}
+
+func (a *App) openRuleLogs(rule model.RuleMetric) {
+	a.showLogs()
+	a.logSource = logSourceLabel("core")
+	a.logLevel = "info"
+	query := "match " + rule.Type
+	if rule.Payload != "" {
+		query += "(" + rule.Payload + ")"
+	}
+	query += " using"
+	// A sub-rule's policy is selected at runtime.
+	if rule.Proxy != "" && rule.Type != "SubRules" {
+		query += " " + rule.Proxy
+	}
+	a.logSearch = query
+	if rows := a.filteredLogs(); len(rows) > 0 {
+		a.logSelected = rows[0].Sequence
+	}
+	a.logSort = ui.SortOrder{}
+	a.logRows.ScrollTo(0, ui.Start)
+}
+
+func (a *App) openLogs() {
+	a.showLogs()
 	for i := len(a.logs) - 1; i >= 0; i-- {
 		l := a.logs[i]
 		if l.Level == "error" && (l.Source == "process" || l.Source == "core") {
