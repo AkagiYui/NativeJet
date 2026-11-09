@@ -10,9 +10,12 @@ import (
 	"nativejet/internal/model"
 )
 
-const metricsPage = "内核指标"
+const (
+	metricsPage    = "内核指标"
+	metricsNodeTab = 1
+)
 
-var metricSections = [...]string{model.MetricsOverview, model.MetricsNodes, model.MetricsRules, model.MetricsProviders}
+var metricSections = [...]string{model.MetricsOverview, metricsNodeTab: model.MetricsNodes, model.MetricsRules, model.MetricsProviders}
 
 type metricsResult struct {
 	data model.Metrics

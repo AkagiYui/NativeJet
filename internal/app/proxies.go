@@ -12,17 +12,82 @@ const proxiesPage = "策略组"
 
 func (a *App) proxiesView(c *ui.Context) {
 	a.workspaceHeader(c, proxiesIcon, proxiesPage, func() {
-		if a.connected && a.snapshot.Status.Running && a.groups != nil && a.proxiesError == nil {
+		if a.coreRunning() && a.groups != nil && a.proxiesError == nil {
 			muted(c, fmt.Sprintf("%d 个策略组", len(a.groups)))
 		}
 	})
 	switch {
 	case !a.connected:
-		emptyState(c, proxiesIcon, "后台服务未连接", "连接后台服务后即可读取内核策略组。", nil)
+		emptyState(c, proxiesIcon, "后台服务未连接", "连接后台服务后即可读取代理节点和策略组。", nil)
 		return
 	case !a.snapshot.Status.Running:
-		emptyState(c, proxiesIcon, "内核未运行", "启动内核后，这里会显示策略组及其候选节点。", nil)
+		emptyState(c, proxiesIcon, "内核未运行", "启动内核后，这里会显示代理节点和策略组。", nil)
 		return
+	}
+
+	width, _ := c.Size()
+	contentWidth := width - sidebarWidth
+	nodesWidth := contentWidth / 3
+	ui.Row(c).Grow(1).FillWidth().MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c.Key("nodes")).Width(nodesWidth).Shrink(0).MinHeight(0).
+			BorderWidth(0, 1, 0, 0).BorderColor(palette(c).line).Children(func() {
+			a.proxyNodesView(c)
+		})
+		ui.Column(c.Key("groups")).Grow(1).MinWidth(0).MinHeight(0).Children(func() {
+			a.proxyGroupsView(c, contentWidth-nodesWidth)
+		})
+	})
+}
+
+func (a *App) proxyNodesView(c *ui.Context) {
+	result := a.metrics[metricsNodeTab]
+	switch {
+	case result == nil:
+		emptyState(c, proxiesIcon, "正在读取代理节点", "", nil)
+		return
+	case result.err != nil:
+		emptyState(c, proxiesIcon, "无法读取代理节点", result.err.Error(), nil)
+		return
+	}
+	if len(result.data.Problems) > 0 {
+		ui.Row(c).FillWidth().Padding(8, 16).Children(func() { metricProblems(c, result.data.Problems) })
+	}
+	nodes := make([]model.NodeMetric, 0, len(result.data.Nodes))
+	for _, node := range result.data.Nodes {
+		switch node.Type {
+		case "Compatible", "Direct", "Dns", "Pass", "PassRule", "Reject", "RejectDrop", "Rematch",
+			"Fallback", "LoadBalance", "Relay", "Selector", "URLTest":
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	if len(nodes) == 0 {
+		emptyState(c, proxiesIcon, "暂无代理节点", "", nil)
+		return
+	}
+
+	p := palette(c)
+	ui.List(c, nil, len(nodes), func(i int) {
+		node := nodes[i]
+		detail := node.Type
+		if node.Provider != "" {
+			detail += " · " + node.Provider
+		}
+		ui.Row(c).FillWidth().Height(46).PaddingX(10).Gap(6).AlignItems(ui.Center).
+			Radius(controlRadius).Background(p.Surface).Border(1, p.line).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, node.Name).SingleLine().Tooltip(node.Name)
+				ui.Text(c, detail).FontSize(11).TextColor(p.TextMuted).SingleLine().Tooltip(detail)
+			})
+			if delay := latestProbe(node).Delay; delay != 0 {
+				ui.Text(c, delayText(delay)).FontSize(11).TextColor(p.TextMuted).SingleLine().Shrink(0)
+			}
+		})
+	}).Grow(1).FillWidth().MinHeight(0).Padding(16).Gap(8).ScrollbarInsets(0, 4, 0, 0).Label("代理节点")
+}
+
+func (a *App) proxyGroupsView(c *ui.Context, width float32) {
+	switch {
 	case a.proxiesError != nil:
 		emptyState(c, proxiesIcon, "无法读取策略组", a.proxiesError.Error(), nil)
 		return
@@ -49,8 +114,7 @@ func (a *App) proxiesView(c *ui.Context) {
 		gap      = 8
 		tileMinW = 230
 	)
-	w, _ := c.Size()
-	columns := max(1, int((w-sidebarWidth-2*padding+gap)/(tileMinW+gap)))
+	columns := max(1, int((width-2*padding+gap)/(tileMinW+gap)))
 	ui.Scroll(c).Grow(1).FillWidth().MinHeight(0).Padding(padding).
 		ScrollbarInsets(0, 4, 0, 0).Children(func() {
 		ui.Column(c).FillWidth().Gap(20).Children(func() {
