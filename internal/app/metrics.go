@@ -20,7 +20,7 @@ type metricsResult struct {
 }
 
 func (a *App) metricsView(c *ui.Context) {
-	workspaceHeader(c, metricsIcon, metricsPage, func() {
+	a.workspaceHeader(c, metricsIcon, metricsPage, func() {
 		iconTabs(c, &a.metricsTab, "指标类别",
 			iconChoice{"概览", metricsIcon}, iconChoice{"节点", linkIcon}, iconChoice{"规则", listIcon}, iconChoice{"集合", layersIcon})
 	})

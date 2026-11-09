@@ -86,7 +86,7 @@ func (a *App) serviceTestsView(c *ui.Context) {
 	supported := a.snapshot.Status.ServiceCatalog
 	updateNeeded := a.connected && !supported
 	ready := a.coreRunning() && supported
-	workspaceHeader(c, serviceTestIcon, serviceTestsPage, func() {
+	a.workspaceHeader(c, serviceTestIcon, serviceTestsPage, func() {
 		if updateNeeded {
 			stateLabel(c, "更新后台服务后即可测试", c.Theme().Warning)
 		} else if state.run != nil {

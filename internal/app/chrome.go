@@ -98,6 +98,9 @@ func (a *App) view(c *ui.Context) {
 		a.statusBar(c)
 	})
 	a.spotlight.view(c)
+	if a.drawsWindowButtons() {
+		a.windowButtons(c)
+	}
 	a.updateConnectionTablePreferences(c)
 }
 
@@ -257,9 +260,9 @@ func stateLabel(c *ui.Context, text string, ink ui.Color) {
 	})
 }
 
-func workspaceHeader(c *ui.Context, icon *ui.SVG, title string, actions func()) {
+func (a *App) workspaceHeader(c *ui.Context, icon *ui.SVG, title string, actions func()) {
 	p := palette(c)
-	bar := c.TitleBar()
+	bar := a.titleBar(c)
 	ui.Row(c).FillWidth().Height(max(toolbarHeight, bar.Height)).Shrink(0).
 		Padding(0, bar.Right+12, 0, 16).AlignItems(ui.Center).Gap(8).
 		BorderWidth(0, 0, 1, 0).BorderColor(p.line).DragWindow().Children(func() {

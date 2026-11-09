@@ -101,9 +101,18 @@ func (a *App) start() {
 	case "Windows":
 		options.TitleBarStyle = mygo.TitleBarHidden
 		options.TitleBarHeight = toolbarHeight
+	case "Linux":
+		options.Frameless = true
 	}
 	a.spotlight.showOnStartup()
 	a.win = mygo.NewWindow(options)
+	if platformName == "Linux" {
+		a.win.OnMaximize(a.win.Invalidate)
+		a.win.OnUnmaximize(a.win.Invalidate)
+		a.win.OnEnterFullScreen(a.win.Invalidate)
+		a.win.OnLeaveFullScreen(a.win.Invalidate)
+		a.win.Invalidate()
+	}
 	if a.page == settingsPage {
 		a.refreshLoginItem()
 	}

@@ -11,7 +11,7 @@ import (
 const proxiesPage = "策略组"
 
 func (a *App) proxiesView(c *ui.Context) {
-	workspaceHeader(c, proxiesIcon, proxiesPage, func() {
+	a.workspaceHeader(c, proxiesIcon, proxiesPage, func() {
 		if a.connected && a.snapshot.Status.Running && a.groups != nil && a.proxiesError == nil {
 			muted(c, fmt.Sprintf("%d 个策略组", len(a.groups)))
 		}

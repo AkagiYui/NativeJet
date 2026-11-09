@@ -52,7 +52,7 @@ func (a *App) geoDataView(c *ui.Context) {
 		emptyTitle, emptyDetail = "无法读取 GeoData", result.err.Error()
 	}
 
-	workspaceHeader(c, geoDataIcon, geoDataPage, func() {
+	a.workspaceHeader(c, geoDataIcon, geoDataPage, func() {
 		if emptyTitle == "" {
 			data := result.data
 			switch {

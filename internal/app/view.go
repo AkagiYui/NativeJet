@@ -16,7 +16,7 @@ import (
 )
 
 func (a *App) configView(c *ui.Context) {
-	workspaceHeader(c, configIcon, "配置", func() {
+	a.workspaceHeader(c, configIcon, "配置", func() {
 		if action(c, plusIcon, "添加配置", false).Bind(&a.spotlight.targets[spotlightConfig]).
 			Disabled(a.busy || !a.connected).Clicked() {
 			a.addConfig()
@@ -247,7 +247,7 @@ func kernelStateLabel(k model.Kernel, selected string) string {
 
 func (a *App) kernelView(c *ui.Context) {
 	status := a.snapshot.Status
-	workspaceHeader(c, kernelIcon, "内核", func() {
+	a.workspaceHeader(c, kernelIcon, "内核", func() {
 		path := status.KernelDirectory
 		if path == "" {
 			path = "等待后台服务"
@@ -343,7 +343,7 @@ func (a *App) kernelView(c *ui.Context) {
 func (a *App) connectionsView(c *ui.Context) {
 	running := a.coreRunning()
 	ready := running && a.connections != nil && a.connectionsError == nil
-	workspaceHeader(c, linkIcon, "连接", func() {
+	a.workspaceHeader(c, linkIcon, "连接", func() {
 		if iconTabs(c, &a.connectionTab, "连接状态", iconChoice{"活动", metricsIcon}, iconChoice{"已关闭", historyIcon}).Changed() {
 			a.connectionIndex = -1
 			a.connectionRows.ScrollTo(0, ui.Start)
@@ -356,7 +356,7 @@ func (a *App) connectionsView(c *ui.Context) {
 			}
 			summary := fmt.Sprintf(format, n)
 			display := summary
-			if width, _ := c.Size(); width-sidebarWidth-c.TitleBar().Right < 630 {
+			if width, _ := c.Size(); width-sidebarWidth-a.titleBar(c).Right < 630 {
 				display = fmt.Sprint(n)
 			}
 			ui.Text(c, display).FontSize(12).TextColor(c.Theme().TextMuted).
@@ -459,7 +459,7 @@ func (a *App) connectionsView(c *ui.Context) {
 
 func (a *App) logsView(c *ui.Context) {
 	var rows []model.Log
-	workspaceHeader(c, logIcon, "日志", func() {
+	a.workspaceHeader(c, logIcon, "日志", func() {
 		ui.TextInput(c.Key("log-search"), &a.logSearch).Placeholder("搜索日志内容").
 			Width(160).MinWidth(68).Shrink(1).Height(controlHeight).Label("搜索日志")
 		ui.Select(c.Key("log-source"), &a.logSource, []string{"全部来源", "内核日志", "启动输出", "后台服务"}).
@@ -552,7 +552,7 @@ func (a *App) logsView(c *ui.Context) {
 const settingsPage = "设置"
 
 func (a *App) settingsView(c *ui.Context) {
-	workspaceHeader(c, settingsIcon, settingsPage, func() {
+	a.workspaceHeader(c, settingsIcon, settingsPage, func() {
 		if action(c, scanIcon, "刷新并重新连接", false).Disabled(a.busy).Clicked() {
 			a.refreshLoginItem()
 			a.refreshService()
