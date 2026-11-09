@@ -459,7 +459,8 @@ func (a *App) connectionsView(c *ui.Context) {
 
 func (a *App) logsView(c *ui.Context) {
 	var rows []model.Log
-	a.workspaceHeader(c, logIcon, "日志", func() {
+	controls := func() {
+		count := ui.Row(c.Key("log-count")).Width(164).Shrink(0).AlignItems(ui.Center)
 		ui.TextInput(c.Key("log-search"), &a.logSearch).Placeholder("搜索日志内容").
 			Width(160).MinWidth(68).Shrink(1).Height(controlHeight).Label("搜索日志")
 		ui.Select(c.Key("log-source"), &a.logSource, []string{"全部来源", "内核日志", "启动输出", "后台服务"}).
@@ -467,10 +468,11 @@ func (a *App) logsView(c *ui.Context) {
 		ui.Select(c.Key("log-level"), &a.logLevel, []string{"全部", "info", "warning", "error", "debug"}).
 			Width(80).MinWidth(80).Shrink(0).Padding(0, 8).Height(controlHeight).Label("日志级别")
 		rows = a.filteredLogs()
-		summary := fmt.Sprintf("显示 %d 条 · 缓存 %d 条", len(rows), len(a.logs))
-		ui.Text(c, fmt.Sprintf("%d / %d 条", len(rows), len(a.logs))).FontSize(11).
-			TextColor(c.Theme().TextMuted).SingleLine().Shrink(0).Label(summary).
-			Tooltip(summary + "\n最多保留 2000 条，暂停只停止拉取。")
+		count.Children(func() {
+			summary := fmt.Sprintf("匹配 %d 条 / 缓存 %d 条", len(rows), len(a.logs))
+			ui.Text(c, summary).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine().MinWidth(0).
+				Tooltip(fmt.Sprintf("%s\n最多缓存 %d 条，暂停只停止拉取。", summary, model.LogCacheLimit))
+		})
 		button, label, icon := "暂停", "暂停显示", pauseIcon
 		if a.paused {
 			button, label, icon = "继续", "继续显示", playIcon
@@ -481,7 +483,14 @@ func (a *App) logsView(c *ui.Context) {
 		if action(c.Key("export"), downloadIcon, "导出", false).Shrink(0).Label("导出日志").Tooltip("导出日志").Clicked() {
 			a.exportLogs()
 		}
-	})
+	}
+	width, _ := c.Size()
+	if width-sidebarWidth-a.titleBar(c).Right < 620 {
+		a.workspaceHeader(c, logIcon, "日志", nil)
+		commandRow(c, controls)
+	} else {
+		a.workspaceHeader(c, logIcon, "日志", controls)
+	}
 	if len(rows) == 0 {
 		if len(a.logs) == 0 {
 			emptyState(c, logIcon, "暂无日志", "内核日志和启动输出会显示在这里。", nil)

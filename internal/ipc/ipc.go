@@ -54,8 +54,13 @@ func (c *Client) Call(ctx context.Context, method string, params, out any) error
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("后台服务 HTTP %s", resp.Status)
 	}
+	limit := int64(24 << 20)
+	if method == "logs" {
+		// 4 MiB of log messages can expand sixfold in JSON. Leave room for entry metadata.
+		limit = 26 << 20
+	}
 	var envelope Response
-	if err = json.NewDecoder(io.LimitReader(resp.Body, 24<<20)).Decode(&envelope); err != nil {
+	if err = json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(&envelope); err != nil {
 		return err
 	}
 	if envelope.Error != "" {

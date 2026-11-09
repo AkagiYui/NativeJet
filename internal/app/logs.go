@@ -26,12 +26,14 @@ func (a *App) appendLogs(logs []model.Log) {
 			a.logAfter = entry.Sequence
 		}
 	}
-	if len(a.logs) > 2000 {
-		a.logs = append([]model.Log(nil), a.logs[len(a.logs)-2000:]...)
+	if excess := len(a.logs) - model.LogCacheLimit; excess > 0 {
+		clear(a.logs[:excess])
+		a.logs = a.logs[excess:]
 	}
 }
 func (a *App) filteredLogs() []model.Log {
 	rows := []model.Log{}
+	query := strings.ToLower(a.logSearch)
 	for _, entry := range a.logs {
 		if a.logLevel != "全部" && entry.Level != a.logLevel {
 			continue
@@ -39,7 +41,7 @@ func (a *App) filteredLogs() []model.Log {
 		if a.logSource != "全部来源" && logSourceLabel(entry.Source) != a.logSource {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(a.logSearch)) {
+		if query != "" && !strings.Contains(strings.ToLower(entry.Message), query) {
 			continue
 		}
 		rows = append(rows, entry)

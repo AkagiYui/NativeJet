@@ -245,9 +245,37 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 		t.Errorf("log inspector title moved from %v to %v when the copy button appeared", header, got)
 	}
 	bounds("复制这条日志")
+	logControls := func(summary string) [5]ui.Rect {
+		t.Helper()
+		count := bounds(summary)
+		controls := [5]ui.Rect{bounds("搜索日志"), bounds("日志来源"), bounds("日志级别"), bounds("暂停显示"), bounds("导出日志")}
+		if count.X+count.W > controls[0].X || controls[4].X+controls[4].W > 920 {
+			t.Errorf("log count or controls out of order: count %v, controls %v", count, controls)
+		}
+		return controls
+	}
+	logStart := logControls("匹配 1 条 / 缓存 1 条")
 	if err := tester.Click("搜索日志"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Type("no match")
-	bounds("显示 0 条 · 缓存 1 条")
+	if got := logControls("匹配 0 条 / 缓存 1 条"); got != logStart {
+		t.Errorf("filtering moved the log controls from %v to %v", logStart, got)
+	}
+	logs := make([]model.Log, model.LogCacheLimit)
+	for i := range logs {
+		logs[i] = model.Log{Sequence: uint64(i + 2), Source: "core", Level: "info", Message: "no match"}
+	}
+	a.appendLogs(logs)
+	if len(a.logs) != model.LogCacheLimit || a.logs[0].Sequence != 2 {
+		t.Fatalf("log cache did not keep the latest %d entries, got %d entries", model.LogCacheLimit, len(a.logs))
+	}
+	tester.Frame()
+	if got := logControls("匹配 10000 条 / 缓存 10000 条"); got != logStart {
+		t.Errorf("a growing cache moved the log controls from %v to %v", logStart, got)
+	}
+	tester.SetTitleBar(ui.TitleBar{Height: toolbarHeight, Right: 138})
+	if got := logControls("匹配 10000 条 / 缓存 10000 条"); got[0].Y < toolbarHeight {
+		t.Errorf("log controls overlap the narrow title bar: %v", got)
+	}
 }

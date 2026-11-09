@@ -160,6 +160,8 @@ type Snapshot struct {
 	Kernels []Kernel `json:"kernels"`
 }
 
+const LogCacheLimit = 10_000
+
 type Log struct {
 	Sequence uint64    `json:"sequence"`
 	Time     time.Time `json:"time"`

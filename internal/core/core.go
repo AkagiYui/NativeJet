@@ -19,6 +19,8 @@ import (
 	"nativejet/internal/platform"
 )
 
+const logMessageBudget = 4 << 20
+
 type Ring struct {
 	mu    sync.Mutex
 	seq   uint64
@@ -35,7 +37,7 @@ func (r *Ring) Add(level, source, message string) {
 	}
 	r.items = append(r.items, model.Log{Sequence: r.seq, Time: time.Now(), Level: logging.Level(level), Source: source, Message: message})
 	r.bytes += len(message)
-	for len(r.items) > 4000 || r.bytes > 4<<20 {
+	for len(r.items) > model.LogCacheLimit || r.bytes > logMessageBudget {
 		r.bytes -= len(r.items[0].Message)
 		r.items[0] = model.Log{}
 		r.items = r.items[1:]
