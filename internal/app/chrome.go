@@ -108,9 +108,10 @@ func (a *App) sidebar(c *ui.Context) {
 	p := palette(c)
 	bar := c.TitleBar()
 	_, height := c.Size()
-	navHeight, navPadding, navGap := float32(30), float32(12), float32(3)
+	navHeight, navPadding, navGap, chartHeight := float32(30), float32(12), float32(3), float32(57)
 	if height < 690 {
-		navHeight, navPadding, navGap = 26, 6, 2
+		// Leave room for fonts with taller lines, such as Noto CJK on Linux.
+		navHeight, navPadding, navGap, chartHeight = 24, 6, 2, 41
 	}
 	icon := brandOutline
 	if a.coreRunning() {
@@ -144,7 +145,7 @@ func (a *App) sidebar(c *ui.Context) {
 			}
 		})
 		a.kernelStatus(c)
-		a.trafficPanel(c)
+		a.trafficPanel(c, chartHeight)
 	})
 }
 

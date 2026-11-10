@@ -10,7 +10,7 @@ import (
 	"nativejet/internal/model"
 )
 
-func (a *App) trafficPanel(c *ui.Context) {
+func (a *App) trafficPanel(c *ui.Context, chartHeight float32) {
 	p := palette(c)
 	rates := a.trafficLabels()
 	sample := a.currentTraffic()
@@ -37,7 +37,7 @@ func (a *App) trafficPanel(c *ui.Context) {
 					Label("累计" + direction.name + "：" + total).Tooltip(total)
 			}
 		})
-		a.trafficChart(c.Key("traffic-plot"), 57)
+		a.trafficChart(c.Key("traffic-plot"), chartHeight)
 	})
 }
 
