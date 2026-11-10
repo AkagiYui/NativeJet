@@ -98,6 +98,11 @@ func (a *App) view(c *ui.Context) {
 		a.statusBar(c)
 	})
 	a.spotlight.view(c)
+	a.importDialog(c)
+	a.downloadModal(c)
+	a.historyDialog(c)
+	a.diffDialog(c)
+	a.nameDialogView(c)
 	if a.drawsWindowButtons() {
 		a.windowButtons(c)
 	}

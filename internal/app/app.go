@@ -39,8 +39,12 @@ type App struct {
 	trafficClient                           *ipc.Client
 	quitting                                bool
 	importing                               *importForm
-	globalNameWindow                        *mygo.Window
 	pendingImports                          []subscriptionLink
+	historyOpen                             bool
+	diffOpen                                bool
+	diff                                    *editor.DiffState
+	nameDialog                              nameDialogState
+	download                                downloadDialogState
 	client                                  *ipc.Client
 	windowContext                           context.Context
 	windowReads                             *windowReads

@@ -92,10 +92,11 @@ func (g *spotlightGuide) view(c *ui.Context) {
 	}
 	colors := palette(c)
 	ui.Overlay(c, func() {
-		ui.Box(c.Key("spotlight")).Absolute().Top(0).Right(0).Bottom(0).Left(0).
-			Draw(func(p *ui.Painter, window ui.Rect) {
-				drawSpotlight(p, window, target.Bounds(), colors.Accent)
-			}).Children(func() {
+		scrim := ui.Box(c.Key("spotlight")).Absolute().Top(0).Right(0).Bottom(0).Left(0)
+		fadeIn(c, scrim)
+		scrim.Draw(func(p *ui.Painter, window ui.Rect) {
+			drawSpotlight(p, window, target.Bounds(), colors.Accent)
+		}).Children(func() {
 			// The wrapper attaches to the target outside the modal. The card
 			// establishes its own focus scope so that Tab stays in the guide.
 			placement := ui.Box(c)
@@ -110,10 +111,10 @@ func (g *spotlightGuide) view(c *ui.Context) {
 				placement.AttachTo(target, step.at, step.self).Margin(16, 0, 0, 0)
 			}
 			placement.Children(func() {
-				card := ui.Column(c).Width(width).Padding(16).Gap(9).Radius(12).
-					Background(colors.Surface).Border(1, colors.Border).
-					Shadow(0, 10, 26, 0, ui.RGBA(0, 0, 0, .34)).Modal().Role(ui.RoleDialog).
-					Label("使用引导 · " + step.title)
+				card := ui.Column(c).Width(width).Padding(16).Gap(9).
+					Modal().Role(ui.RoleDialog).Label("使用引导 · " + step.title)
+				overlayPanel(c, card, overlayDialog)
+				fadeIn(c, card)
 				card.Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Icon(c, guideIcon).Size(15, 15).TextColor(colors.Accent)

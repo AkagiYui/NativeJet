@@ -171,39 +171,43 @@ func (a *App) connectionColumnSettings(c *ui.Context) {
 		*open = !*open
 	}
 	button.Role(ui.RolePopUpButton).Expanded(*open)
-	ui.Popover(c, button, open, func() {
-		ui.Column(c).Width(224).Padding(8).Gap(5).Children(func() {
-			iconHeading(c, settingsIcon, "连接列表列设置", 13, 2)
-			muted(c, "拖动表头调整顺序，拖动列边缘调整宽度。")
-			prefs := &a.connectionTable
-			for _, column := range connectionColumns {
-				visible := !prefs.Hidden[column.ID]
-				lastVisible := visible && len(prefs.Hidden) == len(connectionColumns)-1
-				if ui.Checkbox(c.Key(column.ID), &visible, column.Title).Label("显示" + column.Title).Disabled(lastVisible).Changed() {
-					if visible {
-						delete(prefs.Hidden, column.ID)
-					} else {
-						if prefs.Hidden == nil {
-							prefs.Hidden = make(map[string]bool)
+	ui.PopoverBase(c, button, open, func(panel ui.Element) {
+		overlayPanel(c, panel, overlayPopover)
+		fadeIn(c, panel)
+		panel.Children(func() {
+			ui.Column(c).Width(224).Padding(8).Gap(5).Children(func() {
+				iconHeading(c, settingsIcon, "连接列表列设置", 13, 2)
+				muted(c, "拖动表头调整顺序，拖动列边缘调整宽度。")
+				prefs := &a.connectionTable
+				for _, column := range connectionColumns {
+					visible := !prefs.Hidden[column.ID]
+					lastVisible := visible && len(prefs.Hidden) == len(connectionColumns)-1
+					if ui.Checkbox(c.Key(column.ID), &visible, column.Title).Label("显示" + column.Title).Disabled(lastVisible).Changed() {
+						if visible {
+							delete(prefs.Hidden, column.ID)
+						} else {
+							if prefs.Hidden == nil {
+								prefs.Hidden = make(map[string]bool)
+							}
+							prefs.Hidden[column.ID] = true
 						}
-						prefs.Hidden[column.ID] = true
+						a.connectionTableSaveAt = c.Now().Add(connectionTableSaveDelay)
 					}
+				}
+				if prefs.Hidden[a.connectionSort.Column] {
+					if i := connectionColumnIndex(a.connectionSort.Column); i >= 0 {
+						muted(c, "当前按隐藏列「"+connectionColumns[i].Title+"」排序。")
+					}
+				}
+				ui.Divider(c)
+				if action(c, undoIcon, "恢复默认列设置", false).AlignSelf(ui.Start).Clicked() {
+					a.applyConnectionTablePreferences(connectionTablePreferences{})
 					a.connectionTableSaveAt = c.Now().Add(connectionTableSaveDelay)
 				}
-			}
-			if prefs.Hidden[a.connectionSort.Column] {
-				if i := connectionColumnIndex(a.connectionSort.Column); i >= 0 {
-					muted(c, "当前按隐藏列「"+connectionColumns[i].Title+"」排序。")
+				if a.connectionTableError != "" {
+					ui.Text(c, a.connectionTableError).FontSize(12).TextColor(c.Theme().Danger)
 				}
-			}
-			ui.Divider(c)
-			if action(c, undoIcon, "恢复默认列设置", false).AlignSelf(ui.Start).Clicked() {
-				a.applyConnectionTablePreferences(connectionTablePreferences{})
-				a.connectionTableSaveAt = c.Now().Add(connectionTableSaveDelay)
-			}
-			if a.connectionTableError != "" {
-				ui.Text(c, a.connectionTableError).FontSize(12).TextColor(c.Theme().Danger)
-			}
+			})
 		})
 	})
 }

@@ -63,7 +63,7 @@ func (a *App) globalOverrideRow(c *ui.Context) {
 				selected = label
 			}
 		}
-		locked := !a.connected || a.busy || a.global.Buffer.Modified() || a.globalNameWindow != nil || preset == nil
+		locked := !a.connected || a.busy || a.global.Buffer.Modified() || a.nameDialog.open || preset == nil
 		if ui.Select(c.Key("selected-global-override"), &selected, labels).Label("选用的全局覆盖").Grow(1).MinWidth(0).
 			Disabled(locked || len(labels) < 2).Changed() && !locked {
 			if id := ids[selected]; id != "" && id != s.SelectedGlobalOverride {
@@ -91,42 +91,59 @@ func (a *App) globalOverrideRow(c *ui.Context) {
 	}
 }
 
+type nameDialogState struct {
+	open       bool
+	title      string
+	name       string
+	copyPreset bool
+	preset     model.GlobalOverride
+}
+
 func (a *App) nameGlobalOverride(preset model.GlobalOverride, copyPreset bool) {
-	title, name, icon := "重命名全局覆盖", preset.Name, editIcon
+	title, name := "重命名全局覆盖", preset.Name
 	if copyPreset {
-		title, name, icon = "新建全局覆盖副本", preset.Name+" · 副本", copyIcon
+		title, name = "新建全局覆盖副本", preset.Name+" · 副本"
 	}
-	var window *mygo.Window
-	window = mygo.NewWindow(mygo.WindowOptions{Title: title, Width: 440, Height: 210, Content: ui.View(func(c *ui.Context) {
-		useWorkspaceTheme(c)
-		ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
-			heading(c, icon, title, "为这份全局覆盖设置一个名称。")
-			ui.TextInput(c, &name).FillWidth().Label("全局覆盖名称")
-			ui.Box(c).Grow(1)
-			ui.Row(c).FillWidth().Gap(8).Children(func() {
+	a.nameDialog = nameDialogState{open: true, title: title, name: name, copyPreset: copyPreset, preset: preset}
+	a.win.Invalidate()
+}
+
+func (a *App) nameDialogView(c *ui.Context) {
+	d := &a.nameDialog
+	if !d.open {
+		return
+	}
+	icon := editIcon
+	if d.copyPreset {
+		icon = copyIcon
+	}
+	modalLayer(c, "name", &d.open, palette(c).Scrim, func(_, panel ui.Element) {
+		panel.Width(440).Height(210)
+		overlayPanel(c, panel, overlayDialog)
+		panel.Children(func() {
+			ui.Column(c).Fill().Padding(20).Gap(12).Children(func() {
+				heading(c, icon, d.title, "为这份全局覆盖设置一个名称。")
+				ui.TextInput(c, &d.name).FillWidth().Label("全局覆盖名称")
 				ui.Box(c).Grow(1)
-				if action(c, closeIcon, "取消", false).Clicked() {
-					window.Close()
-				}
-				if action(c, saveIcon, "保存", true).Disabled(strings.TrimSpace(name) == "" || a.busy || !a.connected || a.global.Buffer.Modified()).Clicked() {
-					params := map[string]string{"id": preset.ID, "name": name}
-					message := "全局覆盖已重命名"
-					if copyPreset {
-						params = map[string]string{"name": name, "content": preset.Content}
-						message = "已选用新建的全局覆盖，点击“应用配置”后生效"
+				ui.Row(c).FillWidth().Gap(8).Children(func() {
+					ui.Box(c).Grow(1)
+					if action(c, closeIcon, "取消", false).Clicked() {
+						d.open = false
 					}
-					a.request("globalOverride.save", params, message, nil)
-					window.Close()
-				}
+					if action(c, saveIcon, "保存", true).Disabled(strings.TrimSpace(d.name) == "" || a.busy || !a.connected || a.global.Buffer.Modified()).Clicked() {
+						params := map[string]string{"id": d.preset.ID, "name": d.name}
+						message := "全局覆盖已重命名"
+						if d.copyPreset {
+							params = map[string]string{"name": d.name, "content": d.preset.Content}
+							message = "已选用新建的全局覆盖，点击“应用配置”后生效"
+						}
+						a.request("globalOverride.save", params, message, nil)
+						d.open = false
+					}
+				})
 			})
 		})
-	})})
-	a.globalNameWindow = window
-	window.OnClosed(func() {
-		a.globalNameWindow = nil
-		a.win.Invalidate()
 	})
-	window.Focus()
 }
 
 func (a *App) deleteGlobalOverride(preset model.GlobalOverride) {

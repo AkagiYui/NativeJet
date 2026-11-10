@@ -18,6 +18,12 @@ const (
 type workspacePalette struct {
 	ui.Theme
 	rail, line, active, rowSelection ui.Color
+	// Overlay tokens (Pail overlay.go / theme.go). Scrim dims the window behind
+	// a modal. BorderStrong outlines dark overlays where a shadow would vanish.
+	// Shadow* colour the light-theme soft edge; they are transparent in dark.
+	BorderStrong                ui.Color
+	Scrim                       ui.Color
+	ShadowPopover, ShadowDialog ui.Color
 }
 
 var paper = workspacePalette{
@@ -32,6 +38,10 @@ var paper = workspacePalette{
 		Scrollbar: ui.RGBA(53, 52, 42, .34), ScrollbarWidth: 6, Radius: controlRadius, Spacing: 4, FontSize: 13,
 	},
 	rail: ui.Hex("#f0eee7"), line: ui.Hex("#dedbd3"), active: ui.Hex("#e3e0d6"), rowSelection: ui.Hex("#dbe5f2"),
+	BorderStrong:  ui.Hex("#a8a499"),
+	Scrim:         ui.Hex("#141311").Alpha(0.32),
+	ShadowPopover: ui.RGBA(0, 0, 0, 0.14),
+	ShadowDialog:  ui.RGBA(0, 0, 0, 0.18),
 }
 
 var graphite = workspacePalette{
@@ -47,6 +57,10 @@ var graphite = workspacePalette{
 		Scrollbar: ui.RGBA(241, 240, 233, .34), ScrollbarWidth: 6, Radius: controlRadius, Spacing: 4, FontSize: 13,
 	},
 	rail: ui.Hex("#1c1d1b"), line: ui.Hex("#373934"), active: ui.Hex("#373a34"), rowSelection: ui.Hex("#384a63"),
+	BorderStrong:  ui.Hex("#6b6e64"),
+	Scrim:         ui.Hex("#000000").Alpha(0.5),
+	ShadowPopover: ui.Transparent,
+	ShadowDialog:  ui.Transparent,
 }
 
 func palette(c *ui.Context) *workspacePalette {

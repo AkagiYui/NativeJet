@@ -21,7 +21,7 @@ const configTemplate = "# 本地配置：不包含任何代理节点\nmixed-port
 
 type importForm struct {
 	app                                *App
-	win                                *mygo.Window
+	open                               bool
 	tab                                int
 	name, url, path, interval, problem string
 	editor                             *editor.State
@@ -31,7 +31,6 @@ type importForm struct {
 
 func (a *App) addConfig() {
 	if a.importing != nil {
-		a.importing.win.Focus()
 		return
 	}
 	if a.dirty() {
@@ -42,26 +41,18 @@ func (a *App) addConfig() {
 }
 
 func (a *App) openImportForm(link *subscriptionLink) {
-	f := &importForm{app: a, name: "新的配置", interval: "24", editor: newEditor("配置内容", false)}
+	f := &importForm{app: a, open: true, name: "新的配置", interval: "24", editor: newEditor("配置内容", false)}
 	if link != nil {
 		f.fromLink = true
 		f.name, f.url = link.name, link.address
 	}
 	a.importing = f
-	f.win = mygo.NewWindow(mygo.WindowOptions{Title: "添加配置", Width: 720, Height: 650, MinWidth: 560, MinHeight: 520, Content: ui.View(f.view)})
-	f.win.OnClose(func(event *mygo.CloseEvent) {
-		if f.busy && !a.quitting {
-			event.PreventDefault()
-		}
-	})
-	f.win.OnClosed(func() {
-		a.importing = nil
-		a.showPendingImport()
-	})
-	f.win.Focus()
+	a.win.Invalidate()
 }
-func (f *importForm) view(c *ui.Context) {
-	useWorkspaceTheme(c)
+func (f *importForm) close() {
+	f.open = false
+}
+func (f *importForm) content(c *ui.Context) {
 	ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
 		if f.fromLink {
 			heading(c, subscriptionIcon, "导入订阅", "请核对 Clash 链接提供的订阅地址。确认后下载并添加，应用配置需另行操作。")
@@ -112,7 +103,7 @@ func (f *importForm) view(c *ui.Context) {
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
 			ui.Box(c).Grow(1)
 			if action(c, closeIcon, "取消", false).Disabled(f.busy).Clicked() {
-				f.win.Close()
+				f.close()
 			}
 			label, icon := "添加本地配置", plusIcon
 			if f.tab == 0 {
@@ -131,9 +122,9 @@ func (f *importForm) pick() {
 	go func() {
 		// YAML is validated by the helper. Accept extensionless and .conf files as
 		// well; macOS UTType associations for YAML vary between installed apps.
-		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: f.win, Title: "添加配置文件", Message: "选择包含 YAML 配置的文件；导入时会校验内容。"})
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: f.app.win, Title: "添加配置文件", Message: "选择包含 YAML 配置的文件；导入时会校验内容。"})
 		if err != nil {
-			f.win.Update(func() { f.problem = err.Error() })
+			f.app.win.Update(func() { f.problem = err.Error() })
 			return
 		}
 		if len(paths) == 0 {
@@ -141,7 +132,7 @@ func (f *importForm) pick() {
 		}
 		file, err := os.Open(paths[0])
 		if err != nil {
-			f.win.Update(func() { f.problem = err.Error() })
+			f.app.win.Update(func() { f.problem = err.Error() })
 			return
 		}
 		data, err := io.ReadAll(io.LimitReader(file, (4<<20)+1))
@@ -149,7 +140,7 @@ func (f *importForm) pick() {
 		if err == nil && len(data) > 4<<20 {
 			err = errors.New("配置文件不能超过 4 MB")
 		}
-		f.win.Update(func() {
+		f.app.win.Update(func() {
 			if err != nil {
 				f.problem = err.Error()
 				return
@@ -208,7 +199,7 @@ func (f *importForm) submit() {
 		if err == nil {
 			err = f.app.client.Call(ctx, "snapshot", nil, &snap)
 		}
-		f.win.Update(func() {
+		f.app.win.Update(func() {
 			f.busy = false
 			f.app.busy = false
 			defer f.app.updateTray()
@@ -224,82 +215,121 @@ func (f *importForm) submit() {
 			f.app.message = "配置已添加"
 			f.app.problem = ""
 			f.app.win.Invalidate()
-			f.win.Close()
+			f.close()
 		})
 	}()
 }
 
+func (a *App) importDialog(c *ui.Context) {
+	f := a.importing
+	if f == nil {
+		return
+	}
+	modalLayer(c, "import", &f.open, palette(c).Scrim, func(_, panel ui.Element) {
+		winW, winH := c.Size()
+		panel.Width(min(float32(720), winW-48)).Height(min(float32(650), winH-48))
+		overlayPanel(c, panel, overlayDialog)
+		panel.Children(func() { f.content(c) })
+	})
+	// A submission is in flight: the dialog stays until it settles, as the
+	// old window's OnClose guard did.
+	if f.busy && !f.open {
+		f.open = true
+	}
+	if !f.open {
+		a.importing = nil
+		a.showPendingImport()
+	}
+}
+
+type downloadDialogState struct {
+	open     bool
+	releases []model.Release
+	selected string
+	problem  string
+	loading  bool
+}
+
 func (a *App) downloadDialog() {
-	var releases []model.Release
-	var selected string
-	var problem string
-	loading := true
-	var window *mygo.Window
-	window = mygo.NewWindow(mygo.WindowOptions{Title: "下载内核", Width: 700, Height: 440, Content: ui.View(func(c *ui.Context) {
-		useWorkspaceTheme(c)
-		ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
-			heading(c, downloadIcon, "下载 Mihomo", "来源：MetaCubeX/mihomo · GitHub Releases")
-			if loading {
-				muted(c, "正在获取适合本机架构的稳定版本…")
-			} else if len(releases) == 0 {
-				muted(c, "没有可用版本，可关闭后重试或手动放入内核目录。")
-			} else {
-				names := []string{}
-				lookup := map[string]model.Release{}
-				for _, r := range releases {
-					text := r.Version + " · " + r.Name
-					names = append(names, text)
-					lookup[text] = r
-				}
-				ui.Select(c, &selected, names).FillWidth().Label("内核版本")
-				r := lookup[selected]
-				muted(c, "大小 "+bytesString(r.Size))
-				if r.Digest != "" {
-					muted(c, "官方校验值 "+r.Digest)
-				} else {
-					muted(c, "此资源未提供 API 校验值；下载后记录文件 SHA-256。")
-				}
-			}
-			if problem != "" {
-				ui.Text(c, problem).TextColor(c.Theme().Danger)
-			}
-			ui.Box(c).Grow(1)
-			ui.Row(c).FillWidth().Gap(10).Children(func() {
-				if action(c, folderIcon, "打开内核目录", false).Clicked() {
-					a.openDirectory()
-				}
-				ui.Box(c).Grow(1)
-				if action(c, closeIcon, "取消", false).Clicked() {
-					window.Close()
-				}
-				if action(c, downloadIcon, "下载并安装到目录", true).Disabled(loading || len(releases) == 0 || a.busy).Clicked() {
-					var id int64
-					for _, r := range releases {
-						if selected == r.Version+" · "+r.Name {
-							id = r.AssetID
-						}
-					}
-					a.request("kernel.download", map[string]int64{"assetId": id}, "内核已下载；扫描后可选用", func(_ json.RawMessage) { a.request("kernel.scan", nil, "内核目录扫描完成", nil) })
-					window.Close()
-				}
-			})
-		})
-	})})
+	a.download = downloadDialogState{open: true, loading: true}
+	a.win.Invalidate()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		var items []model.Release
 		err := a.client.Call(ctx, "kernel.releases", nil, &items)
-		window.Update(func() {
-			loading = false
+		a.win.Update(func() {
+			d := &a.download
+			d.loading = false
 			if err != nil {
-				problem = err.Error()
+				d.problem = err.Error()
 			} else {
-				releases = items
+				d.releases = items
 				if len(items) > 0 {
-					selected = items[0].Version + " · " + items[0].Name
+					d.selected = items[0].Version + " · " + items[0].Name
 				}
 			}
 		})
 	}()
+}
+
+func (a *App) downloadModal(c *ui.Context) {
+	d := &a.download
+	if !d.open {
+		return
+	}
+	modalLayer(c, "download", &d.open, palette(c).Scrim, func(_, panel ui.Element) {
+		winW, winH := c.Size()
+		panel.Width(min(float32(700), winW-48)).Height(min(float32(440), winH-48))
+		overlayPanel(c, panel, overlayDialog)
+		panel.Children(func() {
+			ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
+				heading(c, downloadIcon, "下载 Mihomo", "来源：MetaCubeX/mihomo · GitHub Releases")
+				if d.loading {
+					muted(c, "正在获取适合本机架构的稳定版本…")
+				} else if len(d.releases) == 0 {
+					muted(c, "没有可用版本，可关闭后重试或手动放入内核目录。")
+				} else {
+					names := []string{}
+					lookup := map[string]model.Release{}
+					for _, r := range d.releases {
+						text := r.Version + " · " + r.Name
+						names = append(names, text)
+						lookup[text] = r
+					}
+					ui.Select(c, &d.selected, names).FillWidth().Label("内核版本")
+					r := lookup[d.selected]
+					muted(c, "大小 "+bytesString(r.Size))
+					if r.Digest != "" {
+						muted(c, "官方校验值 "+r.Digest)
+					} else {
+						muted(c, "此资源未提供 API 校验值；下载后记录文件 SHA-256。")
+					}
+				}
+				if d.problem != "" {
+					ui.Text(c, d.problem).TextColor(c.Theme().Danger)
+				}
+				ui.Box(c).Grow(1)
+				ui.Row(c).FillWidth().Gap(10).Children(func() {
+					if action(c, folderIcon, "打开内核目录", false).Clicked() {
+						a.openDirectory()
+					}
+					ui.Box(c).Grow(1)
+					if action(c, closeIcon, "取消", false).Clicked() {
+						d.open = false
+					}
+					if action(c, downloadIcon, "下载并安装到目录", true).Disabled(d.loading || len(d.releases) == 0 || a.busy).Clicked() {
+						var id int64
+						for _, r := range d.releases {
+							if d.selected == r.Version+" · "+r.Name {
+								id = r.AssetID
+							}
+						}
+						a.request("kernel.download", map[string]int64{"assetId": id}, "内核已下载；扫描后可选用", func(_ json.RawMessage) { a.request("kernel.scan", nil, "内核目录扫描完成", nil) })
+						d.open = false
+					}
+				})
+			})
+		})
+	})
 }

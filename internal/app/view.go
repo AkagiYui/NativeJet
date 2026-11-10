@@ -680,39 +680,50 @@ func (a *App) deleteProfile(p model.Profile) {
 	}()
 }
 func (a *App) history() {
-	var window *mygo.Window
-	window = mygo.NewWindow(mygo.WindowOptions{Title: "配置历史", Width: 720, Height: 520, Content: ui.View(func(c *ui.Context) {
-		useWorkspaceTheme(c)
-		ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
-			heading(c, historyIcon, "配置历史", "恢复会应用当时的原文与覆盖。")
-			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-				ui.Column(c).FillWidth().Gap(10).Children(func() {
-					for i := len(a.snapshot.State.Revisions) - 1; i >= 0; i-- {
-						r := a.snapshot.State.Revisions[i]
-						ui.Row(c.Key(r.ID)).FillWidth().Gap(12).PaddingY(8).Children(func() {
-							ui.Column(c).Grow(1).Gap(3).Children(func() {
-								ui.Text(c, short(r.ID)).Bold()
-								muted(c, r.CreatedAt.Local().Format(time.DateTime))
-								muted(c, "SHA-256 "+short(r.Hash))
-								if r.GlobalOverrideName != "" {
-									muted(c, "全局覆盖 · "+r.GlobalOverrideName)
+	a.historyOpen = true
+	a.win.Invalidate()
+}
+
+func (a *App) historyDialog(c *ui.Context) {
+	if !a.historyOpen {
+		return
+	}
+	modalLayer(c, "history", &a.historyOpen, palette(c).Scrim, func(_, panel ui.Element) {
+		winW, winH := c.Size()
+		panel.Width(min(float32(720), winW-48)).Height(min(float32(520), winH-48))
+		overlayPanel(c, panel, overlayDialog)
+		panel.Children(func() {
+			ui.Column(c).Fill().Padding(22).Gap(16).Children(func() {
+				heading(c, historyIcon, "配置历史", "恢复会应用当时的原文与覆盖。")
+				ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+					ui.Column(c).FillWidth().Gap(10).Children(func() {
+						for i := len(a.snapshot.State.Revisions) - 1; i >= 0; i-- {
+							r := a.snapshot.State.Revisions[i]
+							ui.Row(c.Key(r.ID)).FillWidth().Gap(12).PaddingY(8).Children(func() {
+								ui.Column(c).Grow(1).Gap(3).Children(func() {
+									ui.Text(c, short(r.ID)).Bold()
+									muted(c, r.CreatedAt.Local().Format(time.DateTime))
+									muted(c, "SHA-256 "+short(r.Hash))
+									if r.GlobalOverrideName != "" {
+										muted(c, "全局覆盖 · "+r.GlobalOverrideName)
+									}
+								})
+								if r.ID == a.snapshot.State.ActiveRevision {
+									stateLabel(c, "当前版本", c.Theme().Success)
+								} else if action(c, undoIcon, "恢复并应用", false).Label("恢复并应用版本 " + short(r.ID)).Disabled(a.busy || a.dirty()).Clicked() {
+									a.request("config.restore", map[string]string{"id": r.ID}, "历史版本已恢复", nil)
+									a.historyOpen = false
 								}
 							})
-							if r.ID == a.snapshot.State.ActiveRevision {
-								stateLabel(c, "当前版本", c.Theme().Success)
-							} else if action(c, undoIcon, "恢复并应用", false).Label("恢复并应用版本 " + short(r.ID)).Disabled(a.busy || a.dirty()).Clicked() {
-								a.request("config.restore", map[string]string{"id": r.ID}, "历史版本已恢复", nil)
-								window.Close()
-							}
-						})
-					}
-					if len(a.snapshot.State.Revisions) == 0 {
-						muted(c, "尚无已应用版本。")
-					}
+						}
+						if len(a.snapshot.State.Revisions) == 0 {
+							muted(c, "尚无已应用版本。")
+						}
+					})
 				})
 			})
 		})
-	})})
+	})
 }
 func (a *App) showDiff() {
 	a.request("revision.yaml", map[string]string{"id": a.snapshot.State.ActiveRevision}, "已读取运行版本", func(raw json.RawMessage) {
@@ -722,13 +733,25 @@ func (a *App) showDiff() {
 		old.SetLanguage(editor.LanguageFor("config.yaml"))
 		next := editor.NewBuffer(a.preview.YAML)
 		next.SetLanguage(editor.LanguageFor("config.yaml"))
-		diff := &editor.DiffState{Old: old, New: next, Wrap: true}
-		mygo.NewWindow(mygo.WindowOptions{Title: "已应用版本 → 当前预览", Width: 1000, Height: 700, Content: ui.View(func(c *ui.Context) {
-			useWorkspaceTheme(c)
+		a.diff = &editor.DiffState{Old: old, New: next, Wrap: true}
+		a.diffOpen = true
+		a.win.Invalidate()
+	})
+}
+
+func (a *App) diffDialog(c *ui.Context) {
+	if !a.diffOpen || a.diff == nil {
+		return
+	}
+	modalLayer(c, "diff", &a.diffOpen, palette(c).Scrim, func(_, panel ui.Element) {
+		winW, winH := c.Size()
+		panel.Width(min(float32(1000), winW-48)).Height(min(float32(700), winH-48))
+		overlayPanel(c, panel, overlayDialog)
+		panel.Children(func() {
 			ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 				iconHeading(c, compareIcon, "已应用版本 → 当前预览（敏感值已隐藏）", 15, 1)
-				editor.DiffView(c, diff).Grow(1).FillWidth()
+				editor.DiffView(c, a.diff).Grow(1).FillWidth()
 			})
-		})})
+		})
 	})
 }

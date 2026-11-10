@@ -54,7 +54,6 @@ func (a *App) OpenURL(raw string) {
 	}
 	a.pendingImports = append(a.pendingImports, link)
 	if a.importing != nil {
-		a.importing.win.Focus()
 		return
 	}
 	a.showPendingImport()
