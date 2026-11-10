@@ -108,6 +108,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # The runner has no CJK fonts, so Pango draws the Chinese UI as wide
+      # hex boxes and the layout tests measure the wrong widths.
+      - name: Install CJK fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - name: Run Linux tests and vet
         run: |
           go test ./...
