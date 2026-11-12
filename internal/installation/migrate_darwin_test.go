@@ -44,12 +44,13 @@ func testPayload(t *testing.T) (Payload, string, string) {
 		t.Fatal(err)
 	}
 	profileID, revisionID := storage.ID(), storage.ID()
+	global := model.DefaultGlobalOverride("mixed-port: 7897\n")
 	preset := model.GlobalOverride{ID: storage.ID(), Name: "pending", Content: "mixed-port: 9000\n"}
 	state := model.State{Version: 1, SelectedKernel: id, ActiveProfile: profileID, ActiveRevision: revisionID,
-		GlobalOverrides: []model.GlobalOverride{model.DefaultGlobalOverride("mixed-port: 7897\n"), preset}, SelectedGlobalOverride: preset.ID,
+		GlobalOverrides: []model.GlobalOverride{global, preset}, SelectedGlobalOverride: preset.ID,
 		Profiles:  []model.Profile{{ID: profileID, Kind: "local", Name: "kept", Content: "mode: global\n", Override: "ipv6: false\n"}},
 		Installed: []model.Kernel{{ID: id, Path: source, Version: "fixture"}},
-		Revisions: []model.Revision{{ID: revisionID, ProfileID: profileID, KernelID: id, Source: "mode: rule\nexternal-controller: 127.0.0.1:9090\nsecret: fixture-key\n", GlobalOverride: "mixed-port: 7897\n", ProfileOverride: "tun:\n  enable: true\n"}}}
+		Revisions: []model.Revision{{ID: revisionID, ProfileID: profileID, KernelID: id, Source: "mode: rule\nexternal-controller: 127.0.0.1:9090\nsecret: fixture-key\n", GlobalOverride: global.Content, GlobalOverrideID: global.ID, GlobalOverrideName: global.Name, ProfileOverride: "tun:\n  enable: true\n"}}}
 	p := Payload{Version: 1, OwnerUID: os.Getuid(), HelperRequirement: "test", HelperSHA256: strings.Repeat("a", 64), State: &state, Files: []File{file}}
 	return p, dir, source
 }

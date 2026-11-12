@@ -86,7 +86,7 @@ func kernelSortKey(k model.Kernel, column int, selected string) tableSortKey {
 		return tableSortKey{text: k.Name}
 	case 1:
 		version := kernelVersionLabel(k.Version)
-		return tableSortKey{text: kernelVersionOrder(version), missing: version == ""}
+		return tableSortKey{text: kernelVersionOrder(version), missing: version == model.KernelVersionUnknown}
 	case 2:
 		return tableSortKey{text: k.Arch, missing: k.Arch == ""}
 	default:

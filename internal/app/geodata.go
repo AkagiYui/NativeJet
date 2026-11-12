@@ -23,7 +23,7 @@ func geoPID(status model.Status) int {
 
 func (a *App) geoUpdateAction(c *ui.Context) {
 	result := a.geoData
-	ready := a.coreRunning() && a.snapshot.Status.GeoData && result != nil &&
+	ready := a.coreRunning() && result != nil &&
 		result.client == a.client && result.err == nil && result.data.SourceError == "" &&
 		result.data.PID == a.snapshot.Status.PID
 	if action(c, downloadIcon, "立即更新", true).Shrink(0).Disabled(a.busy || !ready).Clicked() {
@@ -44,8 +44,6 @@ func (a *App) geoDataView(c *ui.Context) {
 	switch {
 	case !a.connected:
 		emptyTitle, emptyDetail = "后台服务未连接", "连接后即可读取 GeoData。"
-	case !a.snapshot.Status.GeoData:
-		emptyTitle, emptyDetail = "后台服务需要更新", "请在「设置」中更新后台服务以启用 GeoData。"
 	case result == nil || result.client != a.client:
 		emptyTitle = "正在读取 GeoData"
 	case result.err != nil:

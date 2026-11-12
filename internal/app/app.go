@@ -255,8 +255,7 @@ func (a *App) accept(snap model.Snapshot, force bool) {
 	}
 	oldStatus := a.snapshot.Status
 	if snap.Status.PID != oldStatus.PID || snap.Status.Running != oldStatus.Running ||
-		snap.State.ActiveRevision != a.snapshot.State.ActiveRevision ||
-		snap.Status.GeoData != oldStatus.GeoData || snap.Status.ProxyControls != oldStatus.ProxyControls {
+		snap.State.ActiveRevision != a.snapshot.State.ActiveRevision {
 		a.resetWindowData()
 	}
 	a.snapshot = snap
@@ -515,13 +514,8 @@ func (a *App) saveOverride() {
 		return
 	}
 	text := a.global.Buffer.String()
-	method := "globalOverride.save"
 	params := map[string]string{"id": a.loadedGlobal, "content": text}
-	if !a.snapshot.Status.GlobalOverrides {
-		method = "override.save"
-		params = map[string]string{"text": text}
-	}
-	a.request(method, params, "全局覆盖已保存，点击“应用配置”后生效", func(_ json.RawMessage) {
+	a.request("globalOverride.save", params, "全局覆盖已保存，点击“应用配置”后生效", func(_ json.RawMessage) {
 		a.global.Buffer.MarkSaved()
 		a.savedGlobal = text
 		// A successful save can precede the next successful snapshot poll.

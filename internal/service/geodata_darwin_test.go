@@ -13,7 +13,7 @@ import (
 func TestGeoDataThroughHelper(t *testing.T) {
 	m := newTestManager(t)
 	installFixture(t, m)
-	if err := m.SaveOverride("", "external-controller-unix: fixture-api.sock\ntun:\n  enable: false\n"); err != nil {
+	if err := saveGlobalOverride(m, "external-controller-unix: fixture-api.sock\ntun:\n  enable: false\n"); err != nil {
 		t.Fatal(err)
 	}
 	profile, err := m.SaveProfile(model.Profile{Name: "geodata", Kind: "local", Content: "test-geodata: true\n"})

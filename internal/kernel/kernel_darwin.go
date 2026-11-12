@@ -4,22 +4,22 @@ import (
 	"context"
 	"debug/macho"
 	"errors"
-	"nativejet/internal/model"
-	"nativejet/internal/platform"
+	"io"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
-	"time"
+
+	"golang.org/x/sys/unix"
+
+	"nativejet/internal/model"
 )
 
 const Executable = "mihomo"
-const kernelOpenFlags = os.O_RDONLY
+const kernelOpenFlags = unix.O_NOFOLLOW | unix.O_NONBLOCK
 
-func (m *Manager) probe(ctx context.Context, info os.FileInfo, _ *os.File, item *model.Kernel) {
-	path := item.Path
-	var err error
-	if err = validateExecutable(path); err != nil {
+func (m *Manager) probe(_ context.Context, info os.FileInfo, reader io.ReaderAt, item *model.Kernel) {
+	image, err := machoImage(reader)
+	if err != nil {
 		item.Error = err.Error()
 		return
 	}
@@ -27,51 +27,37 @@ func (m *Manager) probe(ctx context.Context, info os.FileInfo, _ *os.File, item 
 		item.Error = "缺少执行权限：请在 Finder 或终端赋予文件执行权限"
 		return
 	}
-	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
-	cmd := exec.CommandContext(probe, path, "-v")
-	cmd.SysProcAttr = platform.Credentials(m.UID, m.GID)
-	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + m.Inbox}
-	var buf boundedBuffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-	err = cmd.Run()
-	cancel()
-	text := strings.TrimSpace(buf.String())
-	if err != nil {
-		item.Error = "无法读取版本: " + err.Error()
-	} else if !strings.Contains(strings.ToLower(text), "mihomo") && !strings.Contains(text, "Clash.Meta") {
-		item.Error = "首版支持 Mihomo / Clash.Meta 内核"
-	} else {
-		item.Version = strings.Split(text, "\n")[0]
-	}
-	if len(item.Version) > 180 {
-		item.Version = item.Version[:180]
-	}
-
+	inspectBuildInfo(image, item)
 }
-func validateExecutable(path string) error {
+
+// Select the image macOS will execute. Metadata from another architecture in
+// a universal binary must not identify the native image.
+func machoImage(reader io.ReaderAt) (io.ReaderAt, error) {
 	valid := func(f *macho.File) bool {
 		return runtime.GOARCH == "arm64" && f.Cpu == macho.CpuArm64 || runtime.GOARCH == "amd64" && f.Cpu == macho.CpuAmd64
 	}
-	f, err := macho.Open(path)
-	if err == nil {
-		defer f.Close()
-		if valid(f) {
-			return nil
+	if f, err := macho.NewFile(reader); err == nil {
+		if f.Type != macho.TypeExec {
+			return nil, errors.New("内核必须为 macOS 可执行文件")
 		}
-		return errors.New("内核架构与本机不匹配")
+		if !valid(f) {
+			return nil, errors.New("内核架构与本机不匹配")
+		}
+		return reader, nil
 	}
-	fat, err := macho.OpenFat(path)
+	fat, err := macho.NewFatFile(reader)
 	if err != nil {
-		return errors.New("不是可识别的 macOS Mach-O 可执行文件")
+		return nil, errors.New("不是可识别的 macOS Mach-O 可执行文件")
 	}
-	defer fat.Close()
 	for _, arch := range fat.Arches {
 		if valid(arch.File) {
-			return nil
+			if arch.Type != macho.TypeExec {
+				return nil, errors.New("内核必须为 macOS 可执行文件")
+			}
+			return io.NewSectionReader(reader, int64(arch.Offset), int64(arch.Size)), nil
 		}
 	}
-	return errors.New("通用内核不包含本机架构")
+	return nil, errors.New("通用内核不包含本机架构")
 }
 
 func releaseAsset(name string) bool {

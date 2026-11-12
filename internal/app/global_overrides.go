@@ -48,10 +48,6 @@ func (a *App) globalOverrideRow(c *ui.Context) {
 	s := &a.snapshot.State
 	preset := s.GlobalOverrideByID(s.SelectedGlobalOverride)
 	commandRow(c, func() {
-		if !a.snapshot.Status.GlobalOverrides {
-			muted(c, "在设置中更新后台服务后，即可使用多份全局覆盖。")
-			return
-		}
 		labels := make([]string, 0, len(s.GlobalOverrides))
 		ids := make(map[string]string, len(s.GlobalOverrides))
 		selected := ""

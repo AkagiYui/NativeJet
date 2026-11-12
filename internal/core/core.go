@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"nativejet/internal/kernel"
 	"nativejet/internal/logging"
 	"nativejet/internal/model"
 	"nativejet/internal/platform"
@@ -112,11 +113,19 @@ func (s *Supervisor) Restore(r *model.ProcessRecord, controller Controller) bool
 	s.Logs.Add("info", "helper", "已恢复对现有内核进程的管理")
 	return true
 }
-func (s *Supervisor) Start(ctx context.Context, binary, home, config, revision string, controller Controller) error {
+func (s *Supervisor) Start(ctx context.Context, binary, expectedSHA256, home, config, revision string, controller Controller) error {
 	if s.Running() {
 		return errors.New("内核已经运行")
 	}
 	occupied := controller.occupied(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	verified, err := kernel.OpenVerified(binary, expectedSHA256)
+	if err != nil {
+		return err
+	}
+	defer verified.Close()
 	if err := ctx.Err(); err != nil {
 		return err
 	}

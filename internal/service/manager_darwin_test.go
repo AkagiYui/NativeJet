@@ -22,8 +22,10 @@ import (
 	"gopkg.in/yaml.v3"
 	"nativejet/internal/config"
 	"nativejet/internal/ipc"
+	"nativejet/internal/kernel"
 	"nativejet/internal/model"
 	"nativejet/internal/platform"
+	"nativejet/internal/storage"
 )
 
 // The test executable only implements the control API. It has no TUN, proxy
@@ -31,9 +33,6 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "-v":
-			fmt.Println("Mihomo TestFixture darwin")
-			os.Exit(0)
 		case "-t":
 			fmt.Fprintln(os.Stderr, "fixture: unexpected config validation")
 			os.Exit(1)
@@ -164,7 +163,19 @@ func installFixture(t *testing.T, m *Manager) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(m.kernel.Inbox, "fixture-mihomo"), data, 0755); err != nil {
+	// Lifecycle fixtures are deliberately not Mihomo binaries. Seed their
+	// managed copy explicitly; inbox identification has separate static tests.
+	id, err := kernel.Hash(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(m.kernel.Installed, id, kernel.Executable)
+	if err = storage.Atomic(path, data, 0555); err != nil {
+		t.Fatal(err)
+	}
+	state := m.clone()
+	state.Installed = append(state.Installed, model.Kernel{ID: id, Name: "fixture-mihomo", Path: path, Version: "TestFixture", Installed: true})
+	if err = m.commit(state); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -179,6 +190,10 @@ func installFixture(t *testing.T, m *Manager) {
 	if err = m.SelectKernel(ctx, kernels[0].ID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func saveGlobalOverride(m *Manager, content string) error {
+	return m.SaveGlobalOverride(m.clone().SelectedGlobalOverride, nil, &content)
 }
 
 func TestPrivilegedKernelRequiresExplicitHashApproval(t *testing.T) {
@@ -207,10 +222,46 @@ func TestPrivilegedKernelRequiresExplicitHashApproval(t *testing.T) {
 	}
 }
 
+func TestManagedKernelStartsOnlyOnExplicitStart(t *testing.T) {
+	m := newTestManager(t)
+	installFixture(t, m)
+	if err := saveGlobalOverride(m, "tun:\n  enable: false\n"); err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.SaveProfile(model.Profile{Name: "explicit start", Kind: "local", Content: "mode: rule\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := m.Apply(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if m.core.Running() {
+		t.Fatal("applying a stopped configuration executed a core")
+	}
+	if err := m.Start(ctx); err != nil {
+		t.Fatalf("explicit start failed: %v; logs: %+v", err, m.Logs(0))
+	}
+	if !m.core.Running() {
+		t.Fatal("explicit start did not execute the managed copy")
+	}
+	if err := m.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	k := m.clone().Installed[0]
+	if err := storage.Atomic(k.Path, []byte("tampered"), 0555); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Start(ctx); err == nil || m.core.Running() {
+		t.Fatal("tampered managed copy was executed")
+	}
+}
+
 func TestStartupFailureIncludesFinalStderrAndIgnoresPreviousAttempt(t *testing.T) {
 	m := newTestManager(t)
 	installFixture(t, m)
-	if err := m.SaveOverride("", "external-controller-unix: fixture-api.sock\nmixed-port: 7897\ntun:\n  enable: false\n"); err != nil {
+	if err := saveGlobalOverride(m, "external-controller-unix: fixture-api.sock\nmixed-port: 7897\ntun:\n  enable: false\n"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := m.SaveProfile(model.Profile{Name: "startup", Kind: "local", Content: "mode: rule\ntest-startup-fatal: true\n"})
@@ -271,7 +322,7 @@ func TestStartupFailureIncludesFinalStderrAndIgnoresPreviousAttempt(t *testing.T
 func TestApplyRestartsCoreAndRollsBackOnProcessExit(t *testing.T) {
 	m := newTestManager(t)
 	installFixture(t, m)
-	if err := m.SaveOverride("", "external-controller-unix: fixture-api.sock\ntun:\n  enable: false\n"); err != nil {
+	if err := saveGlobalOverride(m, "external-controller-unix: fixture-api.sock\ntun:\n  enable: false\n"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := m.SaveProfile(model.Profile{Name: "local", Kind: "local", Content: "mode: rule\n"})
@@ -330,7 +381,7 @@ func TestApplyRestartsCoreAndRollsBackOnProcessExit(t *testing.T) {
 func TestSwitchGlobalOverrideKeepsAppliedRevisionAndCanRestoreDeletedPreset(t *testing.T) {
 	m := newTestManager(t)
 	installFixture(t, m)
-	if err := m.SaveOverride("", "tun:\n  enable: false\nmixed-port: 7000\nallow-lan: false\n"); err != nil {
+	if err := saveGlobalOverride(m, "tun:\n  enable: false\nmixed-port: 7000\nallow-lan: false\n"); err != nil {
 		t.Fatal(err)
 	}
 	p, err := m.SaveProfile(model.Profile{Name: "local", Kind: "local", Content: "mode: rule\n", Override: "mixed-port: 7890\n"})
@@ -386,7 +437,7 @@ func TestUserControllerAndRunningWithoutIt(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	_ = listener.Close()
-	if err = m.SaveOverride("", "tun:\n  enable: false\nsecret: user-key\n"); err != nil {
+	if err = saveGlobalOverride(m, "tun:\n  enable: false\nsecret: user-key\n"); err != nil {
 		t.Fatal(err)
 	}
 	source := "mode: rule\nexternal-ui: dashboard\nexternal-controller: " + address + "\n"
@@ -447,13 +498,13 @@ func TestUserControllerAndRunningWithoutIt(t *testing.T) {
 	}
 }
 
-func TestStartRegeneratesOldAppliedRevisionFromSavedLayers(t *testing.T) {
+func TestStartUsesAppliedRevisionWithoutApplyingPendingEdits(t *testing.T) {
 	m := newTestManager(t)
 	installFixture(t, m)
-	if err := m.SaveOverride("", "tun:\n  enable: false\n"); err != nil {
+	if err := saveGlobalOverride(m, "tun:\n  enable: false\n"); err != nil {
 		t.Fatal(err)
 	}
-	p, err := m.SaveProfile(model.Profile{Name: "old revision", Kind: "local", Content: "mode: rule\n"})
+	p, err := m.SaveProfile(model.Profile{Name: "applied revision", Kind: "local", Content: "mode: rule\n"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,18 +514,7 @@ func TestStartRegeneratesOldAppliedRevisionFromSavedLayers(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := m.clone()
-	old := state.ActiveRevision
-	legacy, _, err := config.Compile(config.Layer{Content: "mode: rule\ntun:\n  enable: false\nexternal-controller-unix: old-api.sock\nsecret: old-generated\n"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.Revisions[0].Hash = legacy.Hash
-	if err = os.WriteFile(m.revisionPath(old), []byte(legacy.YAML), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err = m.commit(state); err != nil {
-		t.Fatal(err)
-	}
+	applied := state.ActiveRevision
 	p.Content = "mode: global\n"
 	if _, err = m.SaveProfile(p); err != nil {
 		t.Fatal(err)
@@ -484,11 +524,10 @@ func TestStartRegeneratesOldAppliedRevisionFromSavedLayers(t *testing.T) {
 	}
 	state = m.clone()
 	values, err := m.revisionValues(state.ActiveRevision)
-	if err != nil || state.ActiveRevision == old || values["mode"] != "rule" ||
-		values["external-controller-unix"] != nil || values["secret"] != nil {
-		t.Fatalf("old revision was not regenerated from its saved layers: %v", err)
+	if err != nil || state.ActiveRevision != applied || values["mode"] != "rule" || len(state.Revisions) != 1 {
+		t.Fatalf("startup changed the applied revision or applied pending edits: %v", err)
 	}
-	if state.Profiles[0].Content != p.Content || state.Revisions[0].ID != old {
+	if state.Profiles[0].Content != p.Content || state.Revisions[0].ID != applied {
 		t.Fatal("pending edits or history were lost")
 	}
 }
@@ -677,7 +716,7 @@ func TestIPCProtocolAndPersistence(t *testing.T) {
 	}
 	call("globalOverride.save", map[string]string{"name": "test", "content": "log-level: debug\n"}, nil)
 	call("snapshot", nil, &snap)
-	if !snap.Status.GlobalOverrides || len(snap.State.GlobalOverrides) != 2 || snap.State.SelectedGlobalOverride == first {
+	if len(snap.State.GlobalOverrides) != 2 || snap.State.SelectedGlobalOverride == first {
 		t.Fatal("new override was not added and selected through IPC")
 	}
 	second := snap.State.SelectedGlobalOverride

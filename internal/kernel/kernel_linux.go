@@ -2,7 +2,6 @@ package kernel
 
 import (
 	"context"
-	"debug/buildinfo"
 	"debug/elf"
 	"errors"
 	"io"
@@ -20,10 +19,9 @@ const Executable = "mihomo"
 const kernelOpenFlags = unix.O_NOFOLLOW | unix.O_NONBLOCK
 
 var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?$`)
-var kernelVersion = regexp.MustCompile(`-v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?$`)
 
-func (m *Manager) probe(_ context.Context, info os.FileInfo, file *os.File, item *model.Kernel) {
-	if err := validateELF(file); err != nil {
+func (m *Manager) probe(_ context.Context, info os.FileInfo, reader io.ReaderAt, item *model.Kernel) {
+	if err := validateELF(reader); err != nil {
 		item.Error = err.Error()
 		return
 	}
@@ -31,31 +29,7 @@ func (m *Manager) probe(_ context.Context, info os.FileInfo, file *os.File, item
 		item.Error = "缺少执行权限：请对内核文件执行 chmod +x"
 		return
 	}
-	// Inspection never executes an unapproved kernel in the system service.
-	build, err := buildinfo.Read(file)
-	if err != nil || !(strings.EqualFold(build.Path, "github.com/metacubex/mihomo") ||
-		strings.EqualFold(build.Path, "github.com/metacubex/clash.meta")) {
-		item.Error = "未找到 Mihomo / Clash.Meta 的 Go 构建信息"
-		return
-	}
-	item.Version = "Mihomo · Linux " + item.Arch
-	if version := kernelVersion.FindString(item.Name); version != "" {
-		item.Version = "Mihomo " + version[1:] + "（文件名）"
-	} else if build.Main.Version != "" && build.Main.Version != "(devel)" {
-		item.Version = "Mihomo " + build.Main.Version
-	}
-}
-
-func validateExecutable(path string) error {
-	f, err := os.OpenFile(path, kernelOpenFlags, 0)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
-		return errors.New("内核必须为普通文件")
-	}
-	return validateELF(f)
+	inspectBuildInfo(reader, item)
 }
 
 func validateELF(reader io.ReaderAt) error {

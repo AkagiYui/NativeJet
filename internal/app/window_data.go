@@ -53,15 +53,13 @@ func (a *App) refreshWindowData(preload bool) {
 		}
 		return inactivePageInterval
 	}
-	if a.snapshot.Status.GeoData {
-		result := &geoResult{client: a.client}
-		a.readWindowData(windowQuery{method: "geo.status"}, interval(a.page == geoDataPage), nil, &result.data, func(err error) {
-			if err != nil || result.data.PID == geoPID(a.snapshot.Status) {
-				result.err = err
-				a.geoData = result
-			}
-		})
-	}
+	result := &geoResult{client: a.client}
+	a.readWindowData(windowQuery{method: "geo.status"}, interval(a.page == geoDataPage), nil, &result.data, func(err error) {
+		if err != nil || result.data.PID == geoPID(a.snapshot.Status) {
+			result.err = err
+			a.geoData = result
+		}
+	})
 	if a.coreRunning() {
 		var connections model.Connections
 		a.readWindowData(windowQuery{method: "connections"}, interval(a.page == "连接"), nil, &connections, func(err error) {

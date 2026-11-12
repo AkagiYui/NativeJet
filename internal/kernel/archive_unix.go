@@ -9,8 +9,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	"nativejet/internal/storage"
 )
 
 func unpack(compressed []byte, name string) ([]byte, string, error) {
@@ -30,4 +28,5 @@ func unpack(compressed []byte, name string) ([]byte, string, error) {
 	return binary, strings.TrimSuffix(name, ".gz"), nil
 }
 func (m *Manager) setDownloadOwner(f *os.File) error { return f.Chown(m.UID, m.GID) }
-func writeExecutable(path string, data []byte) error { return storage.Atomic(path, data, 0555) }
+
+const executableMode = 0555

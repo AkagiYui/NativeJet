@@ -11,8 +11,7 @@ import (
 
 func RuntimeDirectory(data string) string {
 	dir := filepath.Join(data, "runtime")
-	// Keep the runtime location chosen by earlier versions for existing revisions
-	// and Mihomo's relative paths. The former socket suffix occupied 16 bytes.
+	// Leave room for local controller names within the Unix socket path limit.
 	if len(dir) > 84 {
 		sum := sha256.Sum256([]byte(data))
 		dir = filepath.Join(os.TempDir(), "nativejet-"+hex.EncodeToString(sum[:8]))

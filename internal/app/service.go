@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"nativejet/internal/buildinfo"
-	"nativejet/internal/config"
 	"nativejet/internal/installation"
 	"nativejet/internal/ipc"
 	"nativejet/internal/model"
@@ -98,17 +97,7 @@ func (a *App) needsServiceAuthorization(method string, params any) bool {
 	if method != "core.start" && method != "core.restart" {
 		return false
 	}
-	if a.snapshot.Status.ActiveTUN {
-		return true
-	}
-	// An older development helper may not expose ActiveTUN yet.
-	for _, r := range a.snapshot.State.Revisions {
-		if r.ID == a.snapshot.State.ActiveRevision {
-			_, values, err := config.Compile(config.Layer{Content: r.Source}, config.Layer{Content: r.GlobalOverride}, config.Layer{Content: r.ProfileOverride})
-			return err == nil && config.BoolAt(values, "tun.enable")
-		}
-	}
-	return false
+	return a.snapshot.Status.ActiveTUN
 }
 
 // Installation keeps clients immutable: late replies from the previous helper
@@ -158,9 +147,6 @@ func (a *App) installService(remove bool, approve string, done func()) {
 					store, err = storage.New(filepath.Join(a.data, "development"))
 					if err == nil {
 						snapshot.State, err = store.Load()
-					}
-					if snapshot.Status.RuntimeDirectory == "" {
-						snapshot.Status.RuntimeDirectory = storage.RuntimeDirectory(filepath.Join(a.data, "development"))
 					}
 				}
 			}
@@ -219,11 +205,6 @@ func (a *App) installService(remove bool, approve string, done func()) {
 		} else if err == nil && remove {
 			next = a.developmentClient
 			probe, finish := context.WithTimeout(context.Background(), 20*time.Second)
-			// Upgrade an idle ordinary helper left by an earlier App version.
-			var old model.Snapshot
-			if next.Call(probe, "snapshot", nil, &old) == nil && !old.Status.Running {
-				_ = next.StopDevelopmentHelper(probe, a.helperPath)
-			}
 			result, err = a.connectSnapshot(probe, next)
 			if err == nil {
 				err = next.Call(probe, "profiles.import", map[string]any{"state": snapshot.State}, nil)

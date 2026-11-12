@@ -229,6 +229,9 @@ func (a *App) finalView(c *ui.Context) {
 var kernelVersionPattern = regexp.MustCompile(`(?i)^(?:mihomo(?: meta)?|clash\.meta)\s+((?:v?\d+\.\d+|alpha-)\S*)`)
 
 func kernelVersionLabel(version string) string {
+	if version == "" {
+		return model.KernelVersionUnknown
+	}
 	if match := kernelVersionPattern.FindStringSubmatch(version); match != nil {
 		return match[1]
 	}
@@ -295,9 +298,6 @@ func (a *App) kernelView(c *ui.Context) {
 			switch col {
 			case 1:
 				text = kernelVersionLabel(k.Version)
-				if text == "" {
-					text = "—"
-				}
 				ui.Text(c, text).FontSize(12).SingleLine().Tooltip(k.Version)
 				return
 			case 2:
@@ -313,7 +313,7 @@ func (a *App) kernelView(c *ui.Context) {
 		}
 		k := kernels[selection]
 		inspector(c, kernelIcon, "内核详情", func() {
-			disabled := a.busy || k.Error != "" || status.Running || k.ID == a.snapshot.State.SelectedKernel
+			disabled := a.busy || !a.connected || k.Error != "" || status.Running || k.ID == a.snapshot.State.SelectedKernel
 			if action(c, checkIcon, "使用所选内核", true).Disabled(disabled).Clicked() {
 				a.request("kernel.select", map[string]string{"id": k.ID}, "内核已选用", nil)
 			}
@@ -322,12 +322,23 @@ func (a *App) kernelView(c *ui.Context) {
 				if status.Running {
 					muted(c, "切换版本前，请先停止内核。")
 				}
-				property(c, "版本", k.Version)
+				version := k.Version
+				if version == "" {
+					version = model.KernelVersionUnknown
+				}
+				property(c, "版本", version)
 				property(c, "文件", k.Path)
+				property(c, "来源", kernelSourceLabel(k))
+				if k.SourceURL != "" {
+					property(c, "下载地址", k.SourceURL)
+				}
+				property(c, "发布包校验", kernelDigestLabel(k))
+				property(c, "管理员授权", kernelAuthorizationLabel(k.ID, status))
+				if k.ID != "" {
+					property(c, "文件指纹（SHA-256）", k.ID)
+				}
 				if k.Error != "" {
 					ui.Text(c, k.Error).FontSize(12).TextColor(c.Theme().Danger)
-				} else {
-					property(c, "SHA-256", k.ID)
 				}
 				if status.KernelPath != "" {
 					ui.Divider(c)

@@ -25,7 +25,7 @@ func TestMetricsFromRunningController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = m.SaveOverride("", "tun:\n  enable: false\nsecret: test-token\n"); err != nil {
+	if err = saveGlobalOverride(m, "tun:\n  enable: false\nsecret: test-token\n"); err != nil {
 		t.Fatal(err)
 	}
 	ctx := t.Context()

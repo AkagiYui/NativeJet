@@ -15,7 +15,7 @@ func TestAppearancePreservesThemeWhenChangingTraySpeed(t *testing.T) {
 	}
 	a.loadAppearance()
 	if want := (appearancePreferences{Theme: mygo.ThemeSystem, MenuBarSpeedLayout: menuBarSpeedStacked}); a.appearance != want {
-		t.Fatalf("legacy preferences loaded as %+v, want %+v", a.appearance, want)
+		t.Fatalf("preferences loaded as %+v, want %+v", a.appearance, want)
 	}
 	prefs := a.appearance
 	prefs.Theme = mygo.ThemeDark

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 )
@@ -39,6 +38,12 @@ func DefaultGlobalOverride(content string) GlobalOverride {
 	return GlobalOverride{ID: "000000000000000000000000", Name: "默认", Content: content}
 }
 
+const (
+	KernelVersionUnknown = "版本未知"
+	KernelSourceLocal    = "local"
+	KernelSourceGitHub   = "github"
+)
+
 type Kernel struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -47,6 +52,11 @@ type Kernel struct {
 	Arch      string `json:"arch"`
 	Error     string `json:"error,omitempty"`
 	Installed bool   `json:"installed"`
+	Source    string `json:"source,omitempty"`
+	SourceURL string `json:"sourceUrl,omitempty"`
+	// AssetDigest describes the downloaded archive, while ID fingerprints the executable.
+	AssetDigest    string `json:"assetDigest,omitempty"`
+	DigestVerified bool   `json:"digestVerified,omitempty"`
 }
 
 type Revision struct {
@@ -82,24 +92,6 @@ type State struct {
 	Revisions              []Revision       `json:"revisions"`
 	Installed              []Kernel         `json:"installed"`
 	Process                *ProcessRecord   `json:"process,omitempty"`
-}
-
-func (s *State) UnmarshalJSON(data []byte) error {
-	type state State
-	var wire struct {
-		state
-		LegacyOverride *string `json:"globalOverride"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	*s = State(wire.state)
-	if s.GlobalOverrides == nil && s.SelectedGlobalOverride == "" && wire.LegacyOverride != nil {
-		preset := DefaultGlobalOverride(*wire.LegacyOverride)
-		s.GlobalOverrides = []GlobalOverride{preset}
-		s.SelectedGlobalOverride = preset.ID
-	}
-	return nil
 }
 
 func (s *State) GlobalOverrideByID(id string) *GlobalOverride {
@@ -147,11 +139,6 @@ type Status struct {
 	KernelAuthorized  bool     `json:"kernelAuthorized"`
 	ActiveTUN         bool     `json:"activeTun"`
 	AuthorizedKernels []string `json:"authorizedKernels,omitempty"`
-	GlobalOverrides   bool     `json:"globalOverrides,omitempty"`
-	GeoData           bool     `json:"geoData,omitempty"`
-	ServiceTests      bool     `json:"serviceTests,omitempty"`
-	ServiceCatalog    bool     `json:"serviceCatalog,omitempty"`
-	ProxyControls     bool     `json:"proxyControls,omitempty"`
 }
 
 type Snapshot struct {

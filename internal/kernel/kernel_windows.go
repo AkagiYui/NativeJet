@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"debug/buildinfo"
 	"debug/pe"
 	"errors"
 	"io"
@@ -14,7 +13,6 @@ import (
 	"strings"
 
 	"nativejet/internal/model"
-	"nativejet/internal/storage"
 )
 
 const Executable = "mihomo.exe"
@@ -22,33 +20,12 @@ const kernelOpenFlags = os.O_RDONLY
 
 var releaseVersion = regexp.MustCompile(`-v[0-9]+\.[0-9]+\.[0-9]+(?:[-.][a-zA-Z0-9.-]+)?\.exe$`)
 
-func (m *Manager) probe(_ context.Context, _ os.FileInfo, file *os.File, item *model.Kernel) {
-	if err := validatePE(file, item.Name); err != nil {
+func (m *Manager) probe(_ context.Context, _ os.FileInfo, reader io.ReaderAt, item *model.Kernel) {
+	if err := validatePE(reader, item.Name); err != nil {
 		item.Error = err.Error()
 		return
 	}
-	// A SYSTEM service must never execute an unapproved binary to identify it.
-	info, err := buildinfo.Read(file)
-	if err != nil || !(strings.EqualFold(info.Path, "github.com/metacubex/mihomo") ||
-		strings.EqualFold(info.Path, "github.com/metacubex/clash.meta")) {
-		item.Error = "未找到 Mihomo / Clash.Meta 的 Go 构建信息"
-		return
-	}
-	item.Version = "Mihomo · Windows " + item.Arch
-	if version := releaseVersion.FindString(item.Name); version != "" {
-		item.Version = "Mihomo " + strings.TrimSuffix(version[1:], ".exe") + "（文件名）"
-	} else if info.Main.Version != "" && info.Main.Version != "(devel)" {
-		item.Version = "Mihomo " + info.Main.Version
-	}
-}
-
-func validateExecutable(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return validatePE(f, path)
+	inspectBuildInfo(reader, item)
 }
 
 func validatePE(reader io.ReaderAt, name string) error {
@@ -114,5 +91,6 @@ func unpack(data []byte, name string) ([]byte, string, error) {
 	return binary, strings.TrimSuffix(name, ".zip") + ".exe", nil
 }
 
-func (m *Manager) setDownloadOwner(*os.File) error   { return nil }
-func writeExecutable(path string, data []byte) error { return storage.Atomic(path, data, 0700) }
+const executableMode = 0700
+
+func (m *Manager) setDownloadOwner(*os.File) error { return nil }

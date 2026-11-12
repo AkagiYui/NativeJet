@@ -11,12 +11,10 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,51 +48,59 @@ func (m *Manager) Scan(ctx context.Context) ([]model.Kernel, error) {
 	}
 	out := []model.Kernel{}
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		path := filepath.Join(m.Inbox, entry.Name())
-		info, err := root.Lstat(entry.Name())
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		if info.Size() > MaxBinary {
-			continue
-		}
-		item := model.Kernel{Name: entry.Name(), Path: path, Arch: runtime.GOARCH}
-		f, err := root.OpenFile(entry.Name(), kernelOpenFlags, 0)
+		item, _, err := m.inspect(ctx, root, entry.Name())
 		if err != nil {
 			continue
 		}
-		info, err = f.Stat()
-		if err != nil || !info.Mode().IsRegular() || info.Size() > MaxBinary {
-			_ = f.Close()
-			continue
-		}
-		hash, err := hashBinary(f)
-		if err != nil {
-			_ = f.Close()
-			item.Error = err.Error()
-			out = append(out, item)
-			continue
-		}
-		item.ID = hash
-		m.probe(ctx, info, f, &item)
-		_ = f.Close()
-		_, err = os.Stat(filepath.Join(m.Installed, item.ID, Executable))
-		item.Installed = err == nil
+		info, err := os.Lstat(filepath.Join(m.Installed, item.ID, Executable))
+		item.Installed = err == nil && info.Mode().IsRegular()
 		out = append(out, item)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
+
+func digestBytes(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+func (m *Manager) inspect(ctx context.Context, root *os.Root, name string) (model.Kernel, []byte, error) {
+	item := model.Kernel{Name: name, Path: filepath.Join(m.Inbox, name), Arch: runtime.GOARCH, Source: model.KernelSourceLocal}
+	data, info, err := readRegular(root, name, MaxBinary)
+	if err != nil {
+		return item, nil, err
+	}
+	// Format checks, fingerprints, and the eventual managed copy all use this
+	// immutable snapshot from one descriptor, never a reopened pathname.
+	item.ID = digestBytes(data)
+	m.probe(ctx, info, bytes.NewReader(data), &item)
+	m.applyReceipt(&item)
+	return item, data, nil
+}
+
 func Hash(path string) (string, error) {
-	f, err := os.Open(path)
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	f, info, err := openRegular(root, filepath.Base(path))
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	return hashBinary(f)
+	hash, err := hashBinary(f)
+	if err == nil {
+		err = unchanged(root, filepath.Base(path), f, info)
+	}
+	return hash, err
 }
 
 func hashBinary(f io.Reader) (string, error) {
@@ -109,70 +115,41 @@ func hashBinary(f io.Reader) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 func (m *Manager) Install(ctx context.Context, id string) (model.Kernel, error) {
-	if len(id) != 64 {
+	if !validID(id) {
 		return model.Kernel{}, errors.New("无效内核标识")
 	}
-	items, err := m.Scan(ctx)
+	root, err := os.OpenRoot(m.Inbox)
 	if err != nil {
 		return model.Kernel{}, err
 	}
-	for _, item := range items {
+	defer root.Close()
+	entries, err := fs.ReadDir(root.FS(), ".")
+	if err != nil {
+		return model.Kernel{}, err
+	}
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return model.Kernel{}, err
+		}
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		item, data, err := m.inspect(ctx, root, entry.Name())
+		if err != nil {
+			continue
+		}
 		if item.ID != id {
 			continue
 		}
 		if item.Error != "" {
 			return item, errors.New(item.Error)
 		}
-		// Hold the source descriptor and hash the bytes that are actually copied.
-		root, err := os.OpenRoot(m.Inbox)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return item, err
 		}
-		defer root.Close()
-		f, err := root.OpenFile(item.Name, kernelOpenFlags, 0)
-		if err != nil {
-			return item, err
-		}
-		defer f.Close()
-		info, err := f.Stat()
-		if err != nil || !info.Mode().IsRegular() {
-			return item, errors.New("内核必须是普通文件")
-		}
-		data, err := io.ReadAll(io.LimitReader(f, MaxBinary+1))
-		if err != nil {
-			return item, err
-		}
-		h := sha256.Sum256(data)
-		if len(data) > MaxBinary || hex.EncodeToString(h[:]) != id {
-			return item, errors.New("扫描后内核文件已改变，请重新扫描")
-		}
-		dir := filepath.Join(m.Installed, id)
-		if err = os.MkdirAll(dir, 0700); err != nil {
-			return item, err
-		}
-		target := filepath.Join(dir, Executable)
-		if err = writeExecutable(target, data); err != nil {
-			return item, err
-		}
-		item.Path = target
-		item.Installed = true
-		return item, nil
+		return m.installSnapshot(item, data)
 	}
-	return model.Kernel{}, errors.New("找不到所选内核，请重新扫描目录")
-}
-
-type boundedBuffer struct{ bytes.Buffer }
-
-func (b *boundedBuffer) Write(p []byte) (int, error) {
-	n := len(p)
-	if b.Len() < 64<<10 {
-		left := (64 << 10) - b.Len()
-		if len(p) > left {
-			p = p[:left]
-		}
-		_, _ = b.Buffer.Write(p)
-	}
-	return n, nil
+	return model.Kernel{}, errors.New("所选内核已改变或不存在，请重新扫描目录")
 }
 
 func (m *Manager) Releases(ctx context.Context) ([]model.Release, error) {
@@ -231,8 +208,7 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	if asset == nil {
 		return "", errors.New("找不到所选发布资源，请刷新版本列表")
 	}
-	u, err := url.Parse(asset.URL)
-	if err != nil || u.Scheme != "https" || u.Host != "github.com" || !strings.HasPrefix(u.Path, "/MetaCubeX/mihomo/releases/download/") {
+	if !officialDownloadURL(asset.URL) {
 		return "", errors.New("拒绝非官方内核下载地址")
 	}
 	client := *m.client()
@@ -262,11 +238,14 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	if len(compressed) > 128<<20 {
 		return "", errors.New("下载文件过大")
 	}
-	if strings.HasPrefix(asset.Digest, "sha256:") {
-		h := sha256.Sum256(compressed)
-		if hex.EncodeToString(h[:]) != strings.TrimPrefix(asset.Digest, "sha256:") {
-			return "", errors.New("官方 SHA-256 校验失败")
+	archiveHash := digestBytes(compressed)
+	verified := false
+	if asset.Digest != "" {
+		if !strings.HasPrefix(asset.Digest, "sha256:") || !validID(strings.TrimPrefix(asset.Digest, "sha256:")) ||
+			strings.TrimPrefix(asset.Digest, "sha256:") != archiveHash {
+			return "", errors.New("官方 SHA-256 校验失败或摘要格式不受支持")
 		}
+		verified = true
 	}
 	binary, name, err := unpack(compressed, asset.Name)
 	if err != nil {
@@ -292,6 +271,17 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	if err == nil {
 		err = f.Sync()
 	}
+	if err == nil {
+		var info os.FileInfo
+		info, err = f.Stat()
+		if err == nil {
+			item := model.Kernel{Name: name, Arch: runtime.GOARCH}
+			m.probe(ctx, info, bytes.NewReader(binary), &item)
+			if item.Error != "" {
+				err = errors.New(item.Error)
+			}
+		}
+	}
 	closeErr := f.Close()
 	if err == nil {
 		err = closeErr
@@ -299,15 +289,16 @@ func (m *Manager) Download(ctx context.Context, assetID int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	receipt := downloadReceipt{SHA256: digestBytes(binary), Version: asset.Version, AssetID: asset.AssetID,
+		URL: asset.URL, AssetDigest: asset.Digest, ArchiveSHA256: archiveHash, DigestVerified: verified}
+	if err = m.saveReceipt(receipt); err != nil {
+		return "", err
+	}
 	if err = root.Rename(tmp, name); err != nil {
 		return "", err
 	}
-	if err = validateExecutable(filepath.Join(m.Inbox, name)); err != nil {
-		_ = root.Remove(name)
-		return "", err
-	}
-	receipt := map[string]string{"version": asset.Version, "assetId": strconv.FormatInt(asset.AssetID, 10), "digest": asset.Digest, "source": "MetaCubeX/mihomo"}
-	meta, _ := json.Marshal(receipt)
-	_ = storage.Atomic(filepath.Join(m.Installed, "receipts", storage.ID()+".json"), meta, 0600)
 	return name, nil
 }

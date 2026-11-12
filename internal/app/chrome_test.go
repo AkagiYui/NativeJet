@@ -166,7 +166,7 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 	}
 	a.connected = true
 	a.accept(model.Snapshot{
-		Status:  model.Status{KernelDirectory: "/kernels", Running: true, ServiceTests: true, ServiceCatalog: true},
+		Status:  model.Status{KernelDirectory: "/kernels", Running: true},
 		State:   model.State{Profiles: []model.Profile{{ID: "local", Name: "测试配置", Kind: "local", Content: "mode: rule\n"}}},
 		Kernels: []model.Kernel{{ID: "sample", Name: "mihomo", Path: "/kernels/mihomo", Arch: "arm64"}},
 	}, true)
@@ -267,13 +267,6 @@ func TestPagesShareOneBottomEdge(t *testing.T) {
 	}
 	tester.Type("no match")
 	bounds("没有匹配的服务")
-	a.snapshot.Status.ServiceCatalog = false
-	tester.Frame()
-	updateHint, filter, settings := bounds("更新后台服务后即可测试"), bounds("搜索服务"), bounds("打开设置")
-	if updateHint.X+updateHint.W > filter.X || filter.X+filter.W > settings.X || settings.X+settings.W > 920-138 {
-		t.Errorf("service controls overlap the update notice or title bar: notice %v, filter %v, settings %v", updateHint, filter, settings)
-	}
-
 	a.page = metricsPage
 	a.metrics[2] = &metricsResult{data: model.Metrics{Rules: []model.RuleMetric{{Type: "Match", Proxy: "DIRECT"}}}}
 	tester.Frame()

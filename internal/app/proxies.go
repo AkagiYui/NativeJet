@@ -99,16 +99,6 @@ func (a *App) proxyGroupsView(c *ui.Context, width float32) {
 		return
 	}
 
-	if !a.snapshot.Status.ProxyControls {
-		commandRow(c, func() {
-			stateLabel(c, "更新后台服务后即可测速和固定节点", c.Theme().Warning)
-			if action(c.Key("settings"), settingsIcon, "打开设置", false).Clicked() {
-				a.page = settingsPage
-				a.refreshService()
-			}
-		})
-	}
-
 	const (
 		padding  = 16
 		gap      = 8
@@ -128,8 +118,7 @@ func (a *App) proxyGroupsView(c *ui.Context, width float32) {
 func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap float32) {
 	p := palette(c)
 	manual := group.Type == "Selector"
-	supported := a.snapshot.Status.ProxyControls
-	pinnable := group.CanPin() && supported
+	pinnable := group.CanPin()
 	state := a.proxyGroupState(group.Name)
 	results := state.results
 	if state.resultsURL != group.DelayTestURL(state.url) {
@@ -159,9 +148,7 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 				a.request("proxies.unpin", map[string]string{"id": group.Name}, "已恢复自动选择", nil)
 			}
 		})
-		if supported {
-			a.proxyTestControls(c, group, state, limitErr)
-		}
+		a.proxyTestControls(c, group, state, limitErr)
 		if len(names) == 0 {
 			muted(c.Key("no-matches"), "没有符合筛选条件的节点")
 			return
@@ -207,20 +194,18 @@ func (a *App) proxyGroup(c *ui.Context, group model.Proxy, columns int, gap floa
 								weight = 600
 							}
 							ui.Text(c, name).SingleLine().FontWeight(weight)
-							if supported {
-								delay := results[name]
-								label := proxyDelayLabel(delay)
-								if name == group.Fixed {
-									label = "已固定 · " + label
-								}
-								ui.Text(c, label).FontSize(11).TextColor(p.TextMuted).SingleLine().Tooltip(label)
+							delay := results[name]
+							label := proxyDelayLabel(delay)
+							if name == group.Fixed {
+								label = "已固定 · " + label
 							}
+							ui.Text(c, label).FontSize(11).TextColor(p.TextMuted).SingleLine().Tooltip(label)
 						})
 						if active {
 							ui.Icon(c, checkIcon).Size(14, 14).TextColor(p.Accent).Shrink(0)
 						}
 					})
-					if supported && action(c.Key("test"), metricsIcon, "测速", false).Label("测速 "+name).
+					if action(c.Key("test"), metricsIcon, "测速", false).Label("测速 " + name).
 						Shrink(0).Disabled(a.busy || a.proxyTest != nil).Clicked() {
 						a.startProxyTest(group, state, &name)
 					}

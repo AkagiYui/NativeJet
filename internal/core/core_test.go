@@ -1,11 +1,30 @@
 package core
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"nativejet/internal/kernel"
 	"nativejet/internal/model"
+	"nativejet/internal/storage"
 )
+
+func TestStartRejectsChangedManagedCopy(t *testing.T) {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte("approved executable")))
+	path := filepath.Join(t.TempDir(), "cores", digest, kernel.Executable)
+	if err := storage.Atomic(path, []byte("replaced executable"), 0555); err != nil {
+		t.Fatal(err)
+	}
+	var supervisor Supervisor
+	err := supervisor.Start(context.Background(), path, digest, t.TempDir(), "unused.yaml", "revision", Controller{})
+	if err == nil || !strings.Contains(err.Error(), "身份发生变化") || supervisor.Record() != nil {
+		t.Fatalf("startup failed to check the actual executable before process creation: %v", err)
+	}
+}
 
 func TestLogRingKeepsLatestEntries(t *testing.T) {
 	var ring Ring

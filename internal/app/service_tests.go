@@ -83,13 +83,9 @@ func (a *App) startServiceTests(id string) {
 
 func (a *App) serviceTestsView(c *ui.Context) {
 	state := &a.serviceTests
-	supported := a.snapshot.Status.ServiceCatalog
-	updateNeeded := a.connected && !supported
-	ready := a.coreRunning() && supported
+	ready := a.coreRunning()
 	a.workspaceHeader(c, serviceTestIcon, serviceTestsPage, func() {
-		if updateNeeded {
-			stateLabel(c, "更新后台服务后即可测试", c.Theme().Warning)
-		} else if state.run != nil {
+		if state.run != nil {
 			stateLabel(c, "正在测试", c.Theme().Accent)
 		} else if !state.finished.IsZero() {
 			muted(c, "上次测试："+state.finished.Format("15:04:05"))
@@ -106,10 +102,6 @@ func (a *App) serviceTestsView(c *ui.Context) {
 		} else if ready && action(c, scanIcon, "测试全部", true).Shrink(0).Disabled(a.busy).Clicked() {
 			a.startServiceTests("")
 		}
-		if updateNeeded && action(c, settingsIcon, "打开设置", false).Shrink(0).Clicked() {
-			a.page = settingsPage
-			a.refreshService()
-		}
 	})
 	modifier := "Ctrl"
 	if runtime.GOOS == "darwin" {
@@ -121,7 +113,7 @@ func (a *App) serviceTestsView(c *ui.Context) {
 		problem = state.err.Error()
 	} else if !a.connected {
 		problem = "连接后台服务后即可测试"
-	} else if supported && !a.coreRunning() {
+	} else if !a.coreRunning() {
 		problem = "启动内核后即可测试"
 	}
 	if problem != "" {

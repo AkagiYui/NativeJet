@@ -124,11 +124,6 @@ func (m *Manager) Snapshot() model.Snapshot {
 	m.mu.RUnlock()
 	status := model.Status{Protocol: model.ProtocolVersion, Privileged: m.privileged, Running: m.core.Running(), ActiveRevision: s.ActiveRevision, ActiveProfile: s.ActiveProfile, Error: lastError, KernelDirectory: m.kernel.Inbox}
 	status.RuntimeDirectory = m.runtime
-	status.GlobalOverrides = true
-	status.GeoData = true
-	status.ServiceTests = true
-	status.ServiceCatalog = true
-	status.ProxyControls = true
 	status.KernelAuthorized = m.approvedKernels == nil || m.approvedKernels[s.SelectedKernel]
 	for id := range m.approvedKernels {
 		status.AuthorizedKernels = append(status.AuthorizedKernels, id)
@@ -241,15 +236,11 @@ func (m *Manager) SaveOverride(id, text string) error {
 		return err
 	}
 	s := m.clone()
-	if id == "" {
-		s.GlobalOverrideByID(s.SelectedGlobalOverride).Content = text
-	} else {
-		p, err := find(&s, id)
-		if err != nil {
-			return err
-		}
-		p.Override = text
+	p, err := find(&s, id)
+	if err != nil {
+		return err
 	}
+	p.Override = text
 	return m.commit(s)
 }
 
@@ -488,7 +479,10 @@ func (m *Manager) SelectKernel(ctx context.Context, id string) error {
 		return errors.New("请先停止内核，再切换版本")
 	}
 	s := m.clone()
-	if slices.ContainsFunc(s.Installed, func(k model.Kernel) bool { return k.ID == id }) {
+	if index := slices.IndexFunc(s.Installed, func(k model.Kernel) bool { return k.ID == id }); index >= 0 {
+		if err := m.kernel.VerifyInstalled(s.Installed[index]); err != nil {
+			return err
+		}
 		s.SelectedKernel = id
 		return m.commit(s)
 	}
@@ -506,12 +500,8 @@ func (m *Manager) selected(s model.State) (model.Kernel, error) {
 			if m.approvedKernels != nil && !m.approvedKernels[k.ID] {
 				return k, errors.New("所选内核需要管理员授权，请点击“授权所选内核”")
 			}
-			hash, err := kernel.Hash(k.Path)
-			if err != nil {
+			if err := m.kernel.VerifyInstalled(k); err != nil {
 				return k, err
-			}
-			if hash != k.ID {
-				return k, errors.New("受管理的内核文件身份发生变化")
 			}
 			return k, nil
 		}
@@ -629,7 +619,7 @@ func (m *Manager) requireTUNPrivilege(values map[string]any) error {
 }
 func (m *Manager) startCore(ctx context.Context, k model.Kernel, id string, values map[string]any) error {
 	controller := core.ConfiguredController(values, m.runtime)
-	return m.core.Start(ctx, k.Path, m.runtime, m.revisionPath(id), id, controller)
+	return m.core.Start(ctx, k.Path, k.ID, m.runtime, m.revisionPath(id), id, controller)
 }
 func (m *Manager) Start(ctx context.Context) error {
 	m.op.Lock()
@@ -655,34 +645,9 @@ func (m *Manager) Start(ctx context.Context) error {
 			return m.error(err)
 		}
 		s = m.clone()
-		revision = s.Revisions[len(s.Revisions)-1]
 	}
-	preview, values, err := config.Compile(
-		config.Layer{Name: "原文", Content: revision.Source},
-		config.Layer{Name: "全局覆盖", Content: revision.GlobalOverride},
-		config.Layer{Name: "当前配置覆盖", Content: revision.ProfileOverride},
-	)
+	values, err := m.revisionValues(s.ActiveRevision)
 	if err != nil {
-		return err
-	}
-	path := m.revisionPath(revision.ID)
-	saved := false
-	if preview.Hash != revision.Hash {
-		revision.ID = storage.ID()
-		revision.CreatedAt = time.Now()
-		revision.Hash = preview.Hash
-		path = m.revisionPath(revision.ID)
-		if err = storage.Atomic(path, []byte(preview.YAML), 0600); err != nil {
-			return err
-		}
-		defer func() {
-			if !saved {
-				_ = os.Remove(path)
-			}
-		}()
-		s.ActiveRevision = revision.ID
-		s.Revisions = append(s.Revisions, revision)
-	} else if values, err = m.revisionValues(revision.ID); err != nil {
 		return err
 	}
 	if err = m.requireTUNPrivilege(values); err != nil {
@@ -696,7 +661,6 @@ func (m *Manager) Start(ctx context.Context) error {
 		_ = m.core.Stop()
 		return err
 	}
-	saved = true
 	return m.error(nil)
 }
 func (m *Manager) Stop() error {
@@ -734,17 +698,11 @@ func (m *Manager) Restore(ctx context.Context, id string) error {
 
 func restoreGlobalOverride(s *model.State, r model.Revision) {
 	id := r.GlobalOverrideID
-	if id == "" {
-		id = s.SelectedGlobalOverride
-	}
 	if preset := s.GlobalOverrideByID(id); preset != nil && preset.Content == r.GlobalOverride {
 		s.SelectedGlobalOverride = id
 		return
 	}
-	name := "恢复的全局覆盖"
-	if r.GlobalOverrideName != "" {
-		name = r.GlobalOverrideName + " · 历史"
-	}
+	name := r.GlobalOverrideName + " · 历史"
 	for _, preset := range s.GlobalOverrides {
 		if preset.Name == name && preset.Content == r.GlobalOverride {
 			s.SelectedGlobalOverride = preset.ID

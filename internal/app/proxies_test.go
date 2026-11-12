@@ -39,7 +39,7 @@ func TestProxyGroupShowsControlsAndOnlyMatchingURLResults(t *testing.T) {
 	}
 	a.page = proxiesPage
 	a.connected = true
-	a.snapshot.Status = model.Status{Running: true, ProxyControls: true}
+	a.snapshot.Status = model.Status{Running: true}
 	a.groups = []model.Proxy{{
 		Name: "自动", Type: "URLTest", Now: "节点 A", Fixed: "节点 A",
 		All: []string{"节点 A", "节点 B"},
@@ -58,11 +58,6 @@ func TestProxyGroupShowsControlsAndOnlyMatchingURLResults(t *testing.T) {
 	if _, ok := tester.Find("已固定 · 42 ms"); ok {
 		t.Fatal("displayed latency from a different URL")
 	}
-	a.snapshot.Status.ProxyControls = false
-	tester.Frame()
-	if _, ok := tester.Find("整组测速"); ok {
-		t.Fatal("displayed controls for an old helper")
-	}
 }
 
 func TestProxyPageSplitsNodesAndGroups(t *testing.T) {
@@ -72,7 +67,7 @@ func TestProxyPageSplitsNodesAndGroups(t *testing.T) {
 	}
 	a.page = proxiesPage
 	a.connected = true
-	a.snapshot.Status = model.Status{Running: true, ProxyControls: true}
+	a.snapshot.Status = model.Status{Running: true}
 	var nodes []model.NodeMetric
 	for i := range 24 {
 		nodes = append(nodes, model.NodeMetric{Name: fmt.Sprintf("节点 %02d", i), Type: "Shadowsocks"})
